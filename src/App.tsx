@@ -3,6 +3,8 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { useAuthStore } from './store/useAuthStore';
 
+import { ChatPage } from './pages/ChatPage';
+
 // Protected Route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -20,9 +22,7 @@ function App() {
             path="/chat"
             element={
               <ProtectedRoute>
-                <div className="flex items-center justify-center h-screen">
-                  <h1 className="text-2xl font-bold">Chat Dashboard (Coming Soon)</h1>
-                </div>
+                <ChatPage />
               </ProtectedRoute>
             }
           />
