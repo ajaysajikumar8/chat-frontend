@@ -18,17 +18,25 @@ export interface ApiResponse<T> {
   data: T;
 }
 
+export interface RegisterData {
+  name: string;
+  username: string;
+  email: string;
+  password: string;
+}
+
 export const authService = {
   login: async (credentials: { email: string; password: string }): Promise<AuthResponse> => {
     const response = await api.post<ApiResponse<AuthResponse>>('/auth/login', credentials);
     return response.data.data;
   },
 
-  register: async (userData: { name: string; email: string; password: string }): Promise<AuthResponse> => {
+  register: async (data: RegisterData): Promise<AuthResponse> => {
     const response = await api.post<ApiResponse<AuthResponse>>('/auth/register', {
-      email: userData.email,
-      password: userData.password,
-      displayName: userData.name,
+      email: data.email,
+      username: data.username,
+      password: data.password,
+      displayName: data.name,
     });
     return response.data.data;
   },

@@ -21,6 +21,7 @@ interface ChatState {
   fetchConversations: () => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (conversationId: string, content: string) => Promise<void>;
+  startConversation: (userId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -125,6 +126,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       get().addMessage(response.data.data);
     } catch (error: any) {
       console.error('Failed to send message:', error);
+      throw error;
+    }
+  },
+
+  startConversation: async (userId: string) => {
+    try {
+      const response = await api.post('/conversations', { participantId: userId });
+      const conversation = response.data.data;
+      
+      // Add conversation if it doesn't exist in local state
+      const existingConv = get().conversations.find(c => c.id === conversation.id);
+      if (!existingConv) {
+        get().setConversations([conversation, ...get().conversations]);
+      }
+      
+      get().setSelectedConversationId(conversation.id);
+    } catch (error: any) {
+      console.error('Failed to start conversation:', error);
       throw error;
     }
   },

@@ -7,6 +7,7 @@ import { authService } from '../services/auth';
 
 export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,7 +21,7 @@ export const RegisterPage: React.FC = () => {
     setError('');
     
     try {
-      const data = await authService.register({ name, email, password });
+      const data = await authService.register({ name, username, email, password });
       setAuth(data.user, data.token);
       navigate('/chat');
     } catch (err) {
@@ -87,6 +88,23 @@ export const RegisterPage: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
                   className="input-field !pl-14"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-300 ml-1">Username</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-medium">@</span>
+                <input 
+                  type="text" 
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="johndoe"
+                  className="input-field !pl-10"
+                  pattern="[a-zA-Z0-9_]+"
+                  title="Only letters, numbers, and underscores are allowed"
                   required
                 />
               </div>

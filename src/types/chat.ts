@@ -1,9 +1,11 @@
 export interface User {
   id: string;
+  username: string;
   displayName: string;
   email: string;
   status: 'ONLINE' | 'OFFLINE' | 'AWAY';
   lastSeen?: string;
+  isDiscoverable?: boolean;
 }
 
 export interface Message {
