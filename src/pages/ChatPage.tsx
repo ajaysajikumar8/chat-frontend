@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { ChatArea } from '../components/chat/ChatArea';
 import { useChatStore } from '../store/useChatStore';
@@ -7,19 +7,20 @@ import { connectSocket, disconnectSocket } from '../services/socket';
 
 export const ChatPage: React.FC = () => {
   const { user } = useAuthStore();
-  const { 
-    conversations, 
-    messages, 
-    selectedConversationId, 
+  const {
+    conversations,
+    messages,
+    selectedConversationId,
     setSelectedConversationId,
     fetchConversations,
-    fetchMessages
+    fetchMessages,
+    markConversationRead,
   } = useChatStore();
 
   useEffect(() => {
     connectSocket();
     fetchConversations();
-    
+
     return () => {
       disconnectSocket();
     };
@@ -30,6 +31,31 @@ export const ChatPage: React.FC = () => {
       fetchMessages(selectedConversationId);
     }
   }, [selectedConversationId, fetchMessages]);
+
+  // Mark as read when a conversation is selected (if tab is visible)
+  const tryMarkRead = useCallback((conversationId: string | null) => {
+    if (!conversationId || conversationId.startsWith('temp_')) return;
+    if (document.visibilityState === 'visible') {
+      markConversationRead(conversationId);
+    }
+  }, [markConversationRead]);
+
+  // Mark as read when conversation changes
+  useEffect(() => {
+    tryMarkRead(selectedConversationId);
+  }, [selectedConversationId, tryMarkRead]);
+
+  // Page Visibility API: mark as read when user comes back to the tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && selectedConversationId) {
+        tryMarkRead(selectedConversationId);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [selectedConversationId, tryMarkRead]);
 
   const selectedConversation = conversations.find((c) => c.id === selectedConversationId) || null;
   const conversationMessages = selectedConversationId ? messages[selectedConversationId] || [] : [];
@@ -48,8 +74,8 @@ export const ChatPage: React.FC = () => {
         onBack={() => setSelectedConversationId(null)}
         isVisible={selectedConversationId !== null}
         currentUserId={user?.id || ''}
+        onNewMessage={() => tryMarkRead(selectedConversationId)}
       />
     </div>
   );
 };
-

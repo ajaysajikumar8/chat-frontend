@@ -22,6 +22,7 @@ export interface ConversationParticipant {
   conversationId: string;
   userId: string;
   user: User;
+  lastReadAt?: string;
 }
 
 export interface Conversation {

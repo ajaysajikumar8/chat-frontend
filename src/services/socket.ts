@@ -8,7 +8,7 @@ const SOCKET_URL = import.meta.env.VITE_API_URL
 let socket: Socket | null = null;
 
 export const connectSocket = () => {
-  if (socket?.connected) return;
+  if (socket) return;
 
   const authStorage = localStorage.getItem('auth-storage');
   let token = '';
@@ -32,11 +32,25 @@ export const connectSocket = () => {
   });
 
   socket.on('new_message', (message) => {
-    useChatStore.getState().addMessage(message);
+    const store = useChatStore.getState();
+    const convExists = store.conversations.some(c => c.id === message.conversationId);
+    
+    store.addMessage(message);
+    
+    // If we received a message for a conversation we don't have loaded,
+    // fetch the latest conversations so it appears in the sidebar
+    if (!convExists) {
+      store.fetchConversations();
+    }
   });
 
   socket.on('user_presence_changed', ({ userId, status, lastSeen }) => {
     useChatStore.getState().updateUserPresence(userId, status, lastSeen);
+  });
+
+  socket.on('messages_read', ({ conversationId, readBy, readAt }: { conversationId: string; readBy: string; readAt: string }) => {
+    // The recipient read the messages — update sender's view to show blue checkmarks
+    useChatStore.getState().updateParticipantLastReadAt(conversationId, readBy, readAt);
   });
 };
 

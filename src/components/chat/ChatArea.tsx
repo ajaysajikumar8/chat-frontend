@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Send, MoreVertical, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Send, MoreVertical, Image as ImageIcon, Check, CheckCheck } from 'lucide-react';
 import type { Conversation, Message } from '../../types/chat';
 import { useChatStore } from '../../store/useChatStore';
+import { formatMessageGroupDate } from '../../utils/dateUtils';
 
 interface ChatAreaProps {
   conversation: Conversation | null;
@@ -9,6 +10,7 @@ interface ChatAreaProps {
   onBack: () => void;
   isVisible: boolean;
   currentUserId: string;
+  onNewMessage: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -17,15 +19,38 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   onBack,
   isVisible,
   currentUserId,
+  onNewMessage,
 }) => {
   const [inputText, setInputText] = useState('');
+  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   const { userPresence, sendMessage } = useChatStore();
 
+  const handleSend = async () => {
+    const text = inputText.trim();
+    if (!text || isSending || !conversation) return;
+    setInputText('');
+    setIsSending(true);
+    try {
+      await sendMessage(conversation.id, text);
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  // Call onNewMessage when new messages arrive so ChatPage can mark as read
+  const prevMessagesLengthRef = React.useRef(messages.length);
+  useEffect(() => {
+    if (messages.length > prevMessagesLengthRef.current) {
+      onNewMessage();
+    }
+    prevMessagesLengthRef.current = messages.length;
+  }, [messages.length, onNewMessage]);
 
   useEffect(() => {
     scrollToBottom();
@@ -104,13 +129,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           const isMine = msg.senderId === currentUserId;
           const showAvatar = !isMine && (index === 0 || messages[index - 1].senderId !== msg.senderId);
 
+          const messageDateGroup = formatMessageGroupDate(msg.createdAt);
+          const previousMessageDateGroup = index > 0 ? formatMessageGroupDate(messages[index - 1].createdAt) : null;
+          const showDateSeparator = messageDateGroup !== previousMessageDateGroup;
+
           return (
-            <div
-              key={msg.id}
-              className={`flex gap-3 max-w-[85%] ${
-                isMine ? 'ml-auto flex-row-reverse' : ''
-              }`}
-            >
+            <React.Fragment key={msg.id}>
+              {showDateSeparator && (
+                <div className="flex justify-center my-4">
+                  <div className="px-3 py-1 bg-bg-surface border border-border-subtle rounded-full text-xs font-medium text-text-subtle shadow-sm">
+                    {messageDateGroup}
+                  </div>
+                </div>
+              )}
+              <div
+                className={`flex gap-3 max-w-[85%] ${
+                  isMine ? 'ml-auto flex-row-reverse' : ''
+                }`}
+              >
               {!isMine && (
                 <div className="shrink-0 w-8">
                   {showAvatar && (
@@ -131,14 +167,26 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 >
                   {msg.content}
                 </div>
-                <span className="text-[10px] text-text-subtle mt-1 px-1">
-                  {new Date(msg.createdAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
+                <div className={`flex items-center gap-1 mt-1 px-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                  <span className="text-[10px] text-text-subtle">
+                    {new Date(msg.createdAt).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  {isMine && (
+                    <>
+                      {participant.lastReadAt && new Date(msg.createdAt) <= new Date(participant.lastReadAt) ? (
+                        <CheckCheck className="w-3.5 h-3.5 text-primary-light" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5 text-text-subtle" />
+                      )}
+                    </>
+                  )}
+                </div>
               </div>
             </div>
+            </React.Fragment>
           );
         })}
         <div ref={messagesEndRef} />
@@ -160,22 +208,14 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                if (inputText.trim()) {
-                  sendMessage(conversation.id, inputText.trim());
-                  setInputText('');
-                }
+                handleSend();
               }
             }}
           />
           
           <button
-            onClick={() => {
-              if (inputText.trim()) {
-                sendMessage(conversation.id, inputText.trim());
-                setInputText('');
-              }
-            }}
-            disabled={!inputText.trim()}
+            onClick={handleSend}
+            disabled={!inputText.trim() || isSending}
             className="p-2 bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:hover:bg-primary text-white rounded-lg transition-colors shrink-0"
           >
             <Send className="w-4 h-4" />

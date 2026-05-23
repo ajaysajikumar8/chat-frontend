@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import api from '../services/api';
-import type { Conversation, Message } from '../types/chat';
+import type { Conversation, Message, User } from '../types/chat';
+import { useAuthStore } from './useAuthStore';
 
 interface ChatState {
   conversations: Conversation[];
-  messages: Record<string, Message[]>; // conversationId -> messages
-  userPresence: Record<string, { status: string; lastSeen?: string }>; // userId -> presence
+  messages: Record<string, Message[]>;
+  userPresence: Record<string, { status: string; lastSeen?: string }>;
   selectedConversationId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -16,12 +17,15 @@ interface ChatState {
   setMessages: (conversationId: string, messages: Message[]) => void;
   setSelectedConversationId: (id: string | null) => void;
   updateUserPresence: (userId: string, status: string, lastSeen?: string) => void;
-  
+  clearLocalUnreadCount: (conversationId: string) => void;
+  updateParticipantLastReadAt: (conversationId: string, userId: string, lastReadAt: string) => void;
+
   // Thunks
   fetchConversations: () => Promise<void>;
   fetchMessages: (conversationId: string) => Promise<void>;
   sendMessage: (conversationId: string, content: string) => Promise<void>;
-  startConversation: (userId: string) => Promise<void>;
+  startConversation: (user: User) => Promise<void>;
+  markConversationRead: (conversationId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -33,7 +37,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
 
   setConversations: (conversations) => {
-    // Also initialize user presence from conversations
     const presence: Record<string, { status: string; lastSeen?: string }> = {};
     conversations.forEach((conv) => {
       conv.participants.forEach((p) => {
@@ -42,56 +45,80 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       });
     });
-    
     set((state) => ({
       conversations,
-      userPresence: { ...state.userPresence, ...presence }
+      userPresence: { ...state.userPresence, ...presence },
     }));
   },
 
   addMessage: (message) => set((state) => {
     const convId = message.conversationId;
     const currentMessages = state.messages[convId] || [];
-    
-    // Check if message already exists (prevent duplicates from socket + local)
+
     if (currentMessages.some((m) => m.id === message.id)) {
       return state;
     }
+
+    const currentUserId = useAuthStore.getState().user?.id;
+    const selectedId = state.selectedConversationId;
+    const isActiveConversation = selectedId === convId;
+    const isTabVisible = document.visibilityState === 'visible';
+    const isMine = message.senderId === currentUserId;
+
+    // Increment unread only if: not my message, not currently viewing, or tab hidden
+    const shouldIncrementUnread = !isMine && !(isActiveConversation && isTabVisible);
 
     return {
       messages: {
         ...state.messages,
         [convId]: [...currentMessages, message],
       },
-      // Optionally update last message in conversation list
       conversations: state.conversations.map((c) => {
         if (c.id === convId) {
+          const newLastMessage = c.messages && c.messages.length > 0 && new Date(c.messages[0].createdAt) > new Date(message.createdAt)
+            ? c.messages
+            : [message];
           return {
             ...c,
-            messages: c.messages && c.messages.length > 0 && new Date(c.messages[0].createdAt) > new Date(message.createdAt)
-              ? c.messages 
-              : [message]
+            messages: newLastMessage,
+            unreadCount: shouldIncrementUnread ? (c.unreadCount ?? 0) + 1 : (c.unreadCount ?? 0),
           };
         }
         return c;
-      })
+      }),
     };
   }),
 
   setMessages: (conversationId, messages) => set((state) => ({
-    messages: {
-      ...state.messages,
-      [conversationId]: messages,
-    },
+    messages: { ...state.messages, [conversationId]: messages },
   })),
 
   setSelectedConversationId: (id) => set({ selectedConversationId: id }),
 
   updateUserPresence: (userId, status, lastSeen) => set((state) => ({
-    userPresence: {
-      ...state.userPresence,
-      [userId]: { status, lastSeen },
-    },
+    userPresence: { ...state.userPresence, [userId]: { status, lastSeen } },
+  })),
+
+  // Called when we mark a conversation as read locally
+  clearLocalUnreadCount: (conversationId) => set((state) => ({
+    conversations: state.conversations.map((c) =>
+      c.id === conversationId ? { ...c, unreadCount: 0 } : c
+    ),
+  })),
+
+  // Called when we receive messages_read socket event — updates the other person's read receipt
+  updateParticipantLastReadAt: (conversationId, userId, lastReadAt) => set((state) => ({
+    conversations: state.conversations.map((c) => {
+      if (c.id === conversationId) {
+        return {
+          ...c,
+          participants: c.participants.map((p) =>
+            p.userId === userId ? { ...p, lastReadAt } : p
+          ),
+        };
+      }
+      return c;
+    }),
   })),
 
   fetchConversations: async () => {
@@ -107,9 +134,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   fetchMessages: async (conversationId: string) => {
-    // Only fetch if we don't have them yet
+    if (conversationId.startsWith('temp_')) return;
     if (get().messages[conversationId]) return;
-    
     try {
       const response = await api.get(`/messages/${conversationId}`);
       get().setMessages(conversationId, response.data.data);
@@ -120,28 +146,64 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendMessage: async (conversationId: string, content: string) => {
     try {
-      // Opt: We could optimistically add the message here
-      const response = await api.post(`/messages/${conversationId}`, { content });
-      // The socket will broadcast it back to us, but we can also add it immediately
-      get().addMessage(response.data.data);
+      if (conversationId.startsWith('temp_')) {
+        const recipientId = conversationId.replace('temp_', '');
+        const response = await api.post(`/messages/direct/${recipientId}`, { content });
+        const { message, conversation } = response.data.data;
+
+        const newConversations = get().conversations.map(c => c.id === conversationId ? conversation : c);
+        get().setConversations(newConversations);
+        get().setSelectedConversationId(conversation.id);
+        get().addMessage(message);
+      } else {
+        const response = await api.post(`/messages/${conversationId}`, { content });
+        get().addMessage(response.data.data);
+      }
     } catch (error: any) {
       console.error('Failed to send message:', error);
       throw error;
     }
   },
 
-  startConversation: async (userId: string) => {
+  markConversationRead: async (conversationId: string) => {
+    if (conversationId.startsWith('temp_')) return;
     try {
-      const response = await api.post('/conversations', { participantId: userId });
-      const conversation = response.data.data;
-      
-      // Add conversation if it doesn't exist in local state
-      const existingConv = get().conversations.find(c => c.id === conversation.id);
-      if (!existingConv) {
-        get().setConversations([conversation, ...get().conversations]);
+      await api.post(`/conversations/${conversationId}/read`);
+      // Clear unread count locally immediately for instant UI feedback
+      get().clearLocalUnreadCount(conversationId);
+    } catch (error: any) {
+      console.error('Failed to mark conversation as read:', error);
+    }
+  },
+
+  startConversation: async (user: User) => {
+    try {
+      const existingConv = get().conversations.find(c =>
+        c.participants.some(p => p.userId === user.id)
+      );
+
+      if (existingConv) {
+        get().setSelectedConversationId(existingConv.id);
+        return;
       }
-      
-      get().setSelectedConversationId(conversation.id);
+
+      const currentUser = useAuthStore.getState().user;
+      if (!currentUser) return;
+
+      const tempId = `temp_${user.id}`;
+      const tempConversation: Conversation = {
+        id: tempId,
+        createdAt: new Date().toISOString(),
+        participants: [
+          { id: `temp_p_${currentUser.id}`, conversationId: tempId, userId: currentUser.id, user: currentUser as User },
+          { id: `temp_p_${user.id}`, conversationId: tempId, userId: user.id, user: user },
+        ],
+        messages: [],
+        unreadCount: 0,
+      };
+
+      get().setConversations([tempConversation, ...get().conversations]);
+      get().setSelectedConversationId(tempId);
     } catch (error: any) {
       console.error('Failed to start conversation:', error);
       throw error;

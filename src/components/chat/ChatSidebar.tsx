@@ -5,6 +5,7 @@ import type { Conversation, User } from '../../types/chat';
 import { useChatStore } from '../../store/useChatStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import api from '../../services/api';
+import { formatRelativeDate } from '../../utils/dateUtils';
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -26,6 +27,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
   const { userPresence, startConversation } = useChatStore();
   const logout = useAuthStore((state) => state.logout);
+  const currentUserId = useAuthStore((state) => state.user?.id);
 
   const filteredConversations = conversations.filter((c) =>
     c.participants.some((p) =>
@@ -63,15 +65,9 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
     return () => clearTimeout(debounceTimer);
   }, [searchQuery, conversations]);
 
-  const handleStartGlobalChat = async (userId: string) => {
-    await startConversation(userId);
+  const handleStartGlobalChat = async (user: User) => {
+    await startConversation(user);
     setSearchQuery('');
-  };
-
-  const formatTime = (isoString?: string) => {
-    if (!isoString) return '';
-    const date = new Date(isoString);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -115,9 +111,15 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
         {filteredConversations.length > 0 && (
           <div className="mb-4">
             {searchQuery && <div className="px-4 py-2 text-xs font-semibold text-text-subtle uppercase tracking-wider">Your Chats</div>}
-            {filteredConversations.map((conv) => {
+            {[...filteredConversations]
+              .sort((a, b) => {
+                const aTime = a.messages?.[0]?.createdAt ? new Date(a.messages[0].createdAt).getTime() : new Date(a.createdAt).getTime();
+                const bTime = b.messages?.[0]?.createdAt ? new Date(b.messages[0].createdAt).getTime() : new Date(b.createdAt).getTime();
+                return bTime - aTime;
+              })
+              .map((conv) => {
               const isSelected = selectedConversationId === conv.id;
-              const participant = conv.participants.find(p => p.userId !== useAuthStore.getState().user?.id)?.user || conv.participants[0].user;
+              const participant = conv.participants.find(p => p.userId !== currentUserId)?.user || conv.participants[0].user;
               const status = userPresence[participant.id]?.status || participant.status;
               const lastMessage = conv.messages?.[0];
 
@@ -146,7 +148,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                         {participant.displayName}
                       </h3>
                       <span className="text-xs text-text-subtle whitespace-nowrap">
-                        {formatTime(lastMessage?.createdAt)}
+                        {formatRelativeDate(lastMessage?.createdAt)}
                       </span>
                     </div>
                     <div className="flex justify-between items-center gap-2">
@@ -182,7 +184,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
               globalResults.map((user) => (
                 <button
                   key={user.id}
-                  onClick={() => handleStartGlobalChat(user.id)}
+                  onClick={() => handleStartGlobalChat(user)}
                   className="w-full text-left p-4 flex items-center gap-3 hover:bg-bg-surface-hover/50 transition-colors border-b border-border-subtle/50 group"
                 >
                   <div className="w-10 h-10 rounded-full bg-bg-surface-hover text-text-base flex items-center justify-center font-semibold text-base border border-border-subtle">
@@ -195,11 +197,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     <p className="text-sm text-primary-light truncate">
                       @{user.username}
                     </p>
-                  </div>
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="bg-primary/20 text-primary-light p-2 rounded-full">
-                      <UserPlus className="w-4 h-4" />
-                    </div>
                   </div>
                 </button>
               ))
