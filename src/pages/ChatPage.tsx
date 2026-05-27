@@ -1,9 +1,11 @@
 import React, { useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { ChatArea } from '../components/chat/ChatArea';
 import { useChatStore } from '../store/useChatStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { connectSocket, disconnectSocket } from '../services/socket';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import type { Message } from '../types/chat';
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -19,6 +21,49 @@ export const ChatPage: React.FC = () => {
     fetchMessages,
     markConversationRead,
   } = useChatStore();
+  
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { subscribe, permission } = usePushNotifications();
+
+  // Handle URL deep linking for push notifications
+  useEffect(() => {
+    const chatId = searchParams.get('chatId');
+    if (chatId) {
+      setSelectedConversationId(chatId);
+      searchParams.delete('chatId');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams, setSelectedConversationId]);
+
+  // Listen to Service Worker messages (when user clicks notification and app is already open)
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data && event.data.type === 'NAVIGATE') {
+        const url = new URL(event.data.url, window.location.origin);
+        const chatId = url.searchParams.get('chatId');
+        if (chatId) {
+          setSelectedConversationId(chatId);
+        }
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleMessage);
+    };
+  }, [setSelectedConversationId]);
+
+  // Prompt for push notifications politely after a short delay
+  useEffect(() => {
+    if (permission === 'default') {
+      const timer = setTimeout(() => {
+        subscribe();
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [permission, subscribe]);
 
   useEffect(() => {
     connectSocket();

@@ -31,7 +31,7 @@ interface ChatState {
 }
 
 // Module-level variable to manage typing timeouts (TTL) without bloating the Zustand state
-const typingTimeouts: Record<string, NodeJS.Timeout> = {};
+const typingTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
 
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
@@ -170,6 +170,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const response = await api.get('/conversations');
       get().setConversations(response.data.data);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       set({ error: error.response?.data?.message || 'Failed to fetch conversations' });
     } finally {
@@ -183,6 +184,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const response = await api.get(`/messages/${conversationId}`);
       get().setMessages(conversationId, response.data.data);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error('Failed to fetch messages:', error);
     }
@@ -203,6 +205,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const response = await api.post(`/messages/${conversationId}`, { content });
         get().addMessage(response.data.data);
       }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error('Failed to send message:', error);
       throw error;
@@ -215,6 +218,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await api.post(`/conversations/${conversationId}/read`);
       // Clear unread count locally immediately for instant UI feedback
       get().clearLocalUnreadCount(conversationId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error('Failed to mark conversation as read:', error);
     }
@@ -248,6 +252,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       get().setConversations([tempConversation, ...get().conversations]);
       get().setSelectedConversationId(tempId);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error('Failed to start conversation:', error);
       throw error;
