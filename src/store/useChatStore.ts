@@ -6,6 +6,7 @@ import { useAuthStore } from './useAuthStore';
 interface ChatState {
   conversations: Conversation[];
   messages: Record<string, Message[]>;
+  hasFetchedHistory: Record<string, boolean>;
   userPresence: Record<string, { status: string; lastSeen?: string }>;
   typingStatus: Record<string, string[]>; // conversationId -> array of userIds currently typing
   selectedConversationId: string | null;
@@ -36,6 +37,7 @@ const typingTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   messages: {},
+  hasFetchedHistory: {},
   userPresence: {},
   typingStatus: {},
   selectedConversationId: null,
@@ -95,9 +97,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
     };
   }),
 
-  setMessages: (conversationId, messages) => set((state) => ({
-    messages: { ...state.messages, [conversationId]: messages },
-  })),
+  setMessages: (conversationId, messages) => set((state) => {
+    const existingMessages = state.messages[conversationId] || [];
+    const messageMap = new Map(existingMessages.map(m => [m.id, m]));
+    messages.forEach(m => messageMap.set(m.id, m));
+    
+    const mergedMessages = Array.from(messageMap.values()).sort(
+      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    return {
+      messages: { ...state.messages, [conversationId]: mergedMessages },
+      hasFetchedHistory: { ...state.hasFetchedHistory, [conversationId]: true },
+    };
+  }),
 
   setSelectedConversationId: (id) => set({ selectedConversationId: id }),
 
@@ -180,7 +193,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchMessages: async (conversationId: string) => {
     if (conversationId.startsWith('temp_')) return;
-    if (get().messages[conversationId]) return;
+    if (get().hasFetchedHistory[conversationId]) return;
     try {
       const response = await api.get(`/messages/${conversationId}`);
       get().setMessages(conversationId, response.data.data);
@@ -201,6 +214,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         get().setConversations(newConversations);
         get().setSelectedConversationId(conversation.id);
         get().addMessage(message);
+        set((state) => ({
+          hasFetchedHistory: { ...state.hasFetchedHistory, [conversation.id]: true }
+        }));
       } else {
         const response = await api.post(`/messages/${conversationId}`, { content });
         get().addMessage(response.data.data);
