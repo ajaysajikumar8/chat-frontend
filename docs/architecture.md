@@ -62,6 +62,7 @@ Heavy business logic is moved into custom hooks (`src/hooks/`) to keep component
 ### Phase 3 — Scalability & Polish
 *   Infinite scroll for message history
 *   Optimized message list rendering (virtualization if needed)
+*   Media support (UI for uploading and rendering image/file attachments)
 *   Profile management UI
 *   Search interface
 

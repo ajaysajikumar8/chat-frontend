@@ -49,8 +49,31 @@ export const connectSocket = () => {
   });
 
   socket.on('messages_read', ({ conversationId, readBy, readAt }: { conversationId: string; readBy: string; readAt: string }) => {
-    // The recipient read the messages — update sender's view to show blue checkmarks
-    useChatStore.getState().updateParticipantLastReadAt(conversationId, readBy, readAt);
+    const authStorage = localStorage.getItem('auth-storage');
+    let currentUserId = '';
+    if (authStorage) {
+      try {
+        const { state } = JSON.parse(authStorage);
+        currentUserId = state.user?.id || '';
+      } catch (e) {
+        // ignore JSON parse error
+      }
+    }
+
+    if (currentUserId === readBy) {
+      useChatStore.getState().clearLocalUnreadCount(conversationId);
+    } else {
+      // The recipient read the messages — update sender's view to show blue checkmarks
+      useChatStore.getState().updateParticipantLastReadAt(conversationId, readBy, readAt);
+    }
+  });
+
+  socket.on('message_updated', (message) => {
+    useChatStore.getState().updateMessageLocally(message);
+  });
+
+  socket.on('message_deleted', ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+    useChatStore.getState().deleteMessageLocally(conversationId, messageId);
   });
 
   socket.on('typing_start', ({ conversationId, userId }: { conversationId: string; userId: string }) => {

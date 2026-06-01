@@ -25,6 +25,8 @@ interface ChatState {
   setTyping: (conversationId: string, userId: string, isTyping: boolean) => void;
   clearLocalUnreadCount: (conversationId: string) => void;
   updateParticipantLastReadAt: (conversationId: string, userId: string, lastReadAt: string) => void;
+  updateMessageLocally: (message: Message) => void;
+  deleteMessageLocally: (conversationId: string, messageId: string) => void;
 
   // Thunks
   fetchConversations: () => Promise<void>;
@@ -117,6 +119,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
       hasFetchedHistory: { ...state.hasFetchedHistory, [conversationId]: true },
       cursors: { ...state.cursors, [conversationId]: nextCursor !== undefined ? nextCursor : state.cursors[conversationId] },
       hasMoreMessages: { ...state.hasMoreMessages, [conversationId]: hasMore !== undefined ? hasMore : state.hasMoreMessages[conversationId] },
+    };
+  }),
+
+  updateMessageLocally: (message) => set((state) => {
+    const convId = message.conversationId;
+    const currentMessages = state.messages[convId];
+    if (!currentMessages) return state;
+
+    return {
+      messages: {
+        ...state.messages,
+        [convId]: currentMessages.map((m) => (m.id === message.id ? message : m)),
+      },
+      conversations: state.conversations.map((c) => {
+        if (c.id === convId && c.messages && c.messages.length > 0 && c.messages[0].id === message.id) {
+          return {
+            ...c,
+            messages: [message],
+          };
+        }
+        return c;
+      }),
+    };
+  }),
+
+  deleteMessageLocally: (conversationId, messageId) => set((state) => {
+    const currentMessages = state.messages[conversationId];
+    if (!currentMessages) return state;
+
+    const updatedMessages = currentMessages.filter((m) => m.id !== messageId);
+    
+    return {
+      messages: {
+        ...state.messages,
+        [conversationId]: updatedMessages,
+      },
+      conversations: state.conversations.map((c) => {
+        if (c.id === conversationId && c.messages && c.messages.length > 0 && c.messages[0].id === messageId) {
+          return {
+            ...c,
+            messages: updatedMessages.length > 0 ? [updatedMessages[updatedMessages.length - 1]] : [],
+          };
+        }
+        return c;
+      }),
     };
   }),
 
