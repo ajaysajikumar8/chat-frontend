@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ArrowLeft, Send, MoreVertical, Image as ImageIcon, CheckCheck, ChevronDown, Paperclip, X, File as FileIcon, Download, PlayCircle } from 'lucide-react';
+import { ArrowLeft, Send, MoreVertical, Image as ImageIcon, CheckCheck, ChevronDown, Paperclip, X, File as FileIcon, Download, PlayCircle, Play, ZoomIn, ZoomOut, Maximize2, Minimize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Virtuoso } from 'react-virtuoso';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { Conversation, Message } from '../../types/chat';
@@ -9,6 +9,224 @@ import { emitTypingStatus } from '../../services/socket';
 import api from '../../services/api';
 
 const EMPTY_ARRAY: string[] = [];
+
+interface MediaWithRetryProps {
+  src: string;
+  msgId: string;
+  alt?: string;
+  className?: string;
+  controls?: boolean;
+}
+
+const ImageWithRetry: React.FC<MediaWithRetryProps> = ({ src, msgId, alt, className }) => {
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [hasRetried, setHasRetried] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(src);
+    setHasRetried(false);
+  }, [src]);
+
+  const handleError = async () => {
+    if (hasRetried) return;
+    try {
+      const res = await api.get(`/messages/${msgId}/download-url`);
+      setCurrentSrc(res.data.data.downloadUrl);
+      setHasRetried(true);
+    } catch (err) {
+      console.error("Failed to fetch fresh image URL on error:", err);
+    }
+  };
+
+  return <img src={currentSrc} alt={alt} onError={handleError} className={className} loading="lazy" />;
+};
+
+const VideoWithRetry: React.FC<MediaWithRetryProps> = ({ src, msgId, className, controls }) => {
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [hasRetried, setHasRetried] = useState(false);
+
+  useEffect(() => {
+    setCurrentSrc(src);
+    setHasRetried(false);
+  }, [src]);
+
+  const handleError = async () => {
+    if (hasRetried) return;
+    try {
+      const res = await api.get(`/messages/${msgId}/download-url`);
+      setCurrentSrc(res.data.data.downloadUrl);
+      setHasRetried(true);
+    } catch (err) {
+      console.error("Failed to fetch fresh video URL on error:", err);
+    }
+  };
+
+  return <video src={currentSrc} controls={controls} onError={handleError} className={className} />;
+};
+
+interface MediaViewerModalProps {
+  mediaMessages: Message[];
+  currentIndex: number;
+  onClose: () => void;
+  onNavigate: (index: number) => void;
+}
+
+const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaMessages, currentIndex, onClose, onNavigate }) => {
+  const activeMedia = mediaMessages[currentIndex];
+  const [zoom, setZoom] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    setZoom(1);
+  }, [currentIndex]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
+        onNavigate(currentIndex - 1);
+      } else if (e.key === 'ArrowRight' && currentIndex < mediaMessages.length - 1) {
+        onNavigate(currentIndex + 1);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentIndex, mediaMessages.length, onClose, onNavigate]);
+
+  if (!activeMedia) return null;
+
+  const isImage = activeMedia.attachmentType?.startsWith('image/');
+  const isVideo = activeMedia.attachmentType?.startsWith('video/');
+
+  const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 3));
+  const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
+  const handleZoomReset = () => setZoom(1);
+
+  return (
+    <div 
+      ref={containerRef}
+      className="fixed inset-0 z-50 flex flex-col justify-between bg-black/95 backdrop-blur-md select-none outline-none"
+      onClick={onClose}
+    >
+      {/* Top Header Controls */}
+      <div 
+        className="h-16 px-6 flex items-center justify-between text-white bg-gradient-to-b from-black/60 to-transparent z-50"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex flex-col min-w-0">
+          <span className="text-sm font-semibold truncate pr-4">{activeMedia.attachmentName || 'Media File'}</span>
+          <span className="text-xs opacity-75">
+            Sent by {activeMedia.sender?.displayName || 'User'} • {new Date(activeMedia.createdAt).toLocaleDateString()}
+          </span>
+        </div>
+
+        {/* Toolbar */}
+        <div className="flex items-center gap-4">
+          {isImage && (
+            <div className="flex items-center bg-white/10 rounded-lg p-0.5 border border-white/5">
+              <button 
+                onClick={handleZoomOut}
+                disabled={zoom <= 0.5}
+                className="p-1.5 hover:bg-white/10 rounded-md transition-colors disabled:opacity-50"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={handleZoomReset}
+                className="px-2 text-xs font-medium hover:bg-white/10 rounded-md h-7 transition-colors"
+                title="Reset Zoom"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button 
+                onClick={handleZoomIn}
+                disabled={zoom >= 3}
+                className="p-1.5 hover:bg-white/10 rounded-md transition-colors disabled:opacity-50"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          
+          <button 
+            onClick={onClose}
+            className="p-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors"
+            title="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex items-center justify-center relative p-4 overflow-hidden">
+        {/* Previous Navigation Arrow */}
+        {currentIndex > 0 && (
+          <button 
+            onClick={e => {
+              e.stopPropagation();
+              onNavigate(currentIndex - 1);
+            }}
+            className="absolute left-6 z-50 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer border border-white/5 shadow-lg shadow-black/30 animate-fade-in"
+          >
+            <ChevronLeft className="w-6 h-6" />
+          </button>
+        )}
+
+        {/* Media Wrapper */}
+        <div 
+          className="max-w-full max-h-full flex items-center justify-center relative"
+          onClick={e => e.stopPropagation()}
+        >
+          {isImage && (
+            <img 
+              src={activeMedia.attachmentUrl} 
+              alt={activeMedia.attachmentName || 'Preview'} 
+              style={{ transform: `scale(${zoom})` }}
+              className="max-w-[90vw] max-h-[80vh] object-contain rounded transition-transform duration-200 ease-out"
+            />
+          )}
+
+          {isVideo && (
+            <div className="relative max-w-[90vw] max-h-[80vh] flex items-center justify-center">
+              <video 
+                ref={videoRef}
+                src={activeMedia.attachmentUrl} 
+                className="max-w-[90vw] max-h-[80vh] object-contain rounded"
+                autoPlay
+                controls
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Next Navigation Arrow */}
+        {currentIndex < mediaMessages.length - 1 && (
+          <button 
+            onClick={e => {
+              e.stopPropagation();
+              onNavigate(currentIndex + 1);
+            }}
+            className="absolute right-6 z-50 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer border border-white/5 shadow-lg shadow-black/30 animate-fade-in"
+          >
+            <ChevronRight className="w-6 h-6" />
+          </button>
+        )}
+      </div>
+
+      {/* Footer Meta Indicator */}
+      <div 
+        className="h-16 flex items-center justify-center text-white/60 text-xs bg-gradient-to-t from-black/40 to-transparent pointer-events-none z-50"
+      >
+        Media {currentIndex + 1} of {mediaMessages.length}
+      </div>
+    </div>
+  );
+};
 
 interface ChatAreaProps {
   conversation: Conversation | null;
@@ -32,6 +250,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const isSendingRef = useRef(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [activeMediaId, setActiveMediaId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -144,6 +363,37 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
       setIsSending(false);
       setIsUploading(false);
     }
+  };
+
+  const handleDownloadClick = async (e: React.MouseEvent, msgId: string) => {
+    e.preventDefault();
+    try {
+      const response = await api.get(`/messages/${msgId}/download-url`);
+      const { downloadUrl } = response.data.data;
+      
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error("Failed to fetch fresh download URL:", err);
+    }
+  };
+
+  const mediaMessages = messages.filter(m => m.attachmentUrl && (m.attachmentType?.startsWith('image/') || m.attachmentType?.startsWith('video/')));
+  const activeMediaIndex = mediaMessages.findIndex(m => m.id === activeMediaId);
+
+  const handleNavigateMedia = (index: number) => {
+    if (index >= 0 && index < mediaMessages.length) {
+      setActiveMediaId(mediaMessages[index].id);
+    }
+  };
+
+  const handleCloseMediaViewer = () => {
+    setActiveMediaId(null);
   };
 
   // Remove the simple scroll to bottom since Virtuoso handles it via initialTopMostItemIndex
@@ -383,14 +633,24 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           {msg.attachmentUrl && (
                             <div className="mb-1 rounded-lg overflow-hidden max-w-[280px]">
                               {msg.attachmentType?.startsWith('image/') ? (
-                                <img src={msg.attachmentUrl} alt={msg.attachmentName || 'Image'} className="w-full h-auto object-cover rounded-lg" loading="lazy" />
+                                <div className="cursor-pointer" onClick={() => setActiveMediaId(msg.id)}>
+                                  <ImageWithRetry src={msg.attachmentUrl} msgId={msg.id} alt={msg.attachmentName || 'Image'} className="w-full h-auto object-cover rounded-lg" />
+                                </div>
                               ) : msg.attachmentType?.startsWith('video/') ? (
-                                <video src={msg.attachmentUrl} controls className="w-full h-auto rounded-lg max-h-[300px]" />
+                                <div className="relative group cursor-pointer" onClick={() => setActiveMediaId(msg.id)}>
+                                  <VideoWithRetry src={msg.attachmentUrl} msgId={msg.id} controls={false} className="w-full h-auto rounded-lg max-h-[240px] object-cover pointer-events-none" />
+                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/20 transition-colors rounded-lg">
+                                    <div className="w-11 h-11 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center border border-white/20 shadow-md transform group-hover:scale-105 transition-all">
+                                      <Play className="w-4 h-4 fill-current ml-0.5 text-white" />
+                                    </div>
+                                  </div>
+                                </div>
                               ) : (
                                 <a 
                                   href={msg.attachmentUrl} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
+                                  onClick={(e) => handleDownloadClick(e, msg.id)}
                                   className={`flex items-center gap-2 p-3 rounded-lg ${isMine ? 'bg-primary-hover/50 text-white hover:bg-primary-hover' : 'bg-bg-surface border border-border-subtle hover:bg-bg-surface-hover text-text-base'} transition-colors`}
                                 >
                                   <FileIcon className="w-8 h-8 shrink-0 opacity-80" />
@@ -521,6 +781,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </button>
         </div>
       </div>
+
+      {activeMediaId !== null && activeMediaIndex !== -1 && (
+        <MediaViewerModal 
+          mediaMessages={mediaMessages}
+          currentIndex={activeMediaIndex}
+          onClose={handleCloseMediaViewer}
+          onNavigate={handleNavigateMedia}
+        />
+      )}
     </div>
   );
 };

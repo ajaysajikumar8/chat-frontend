@@ -1,11 +1,54 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Search, MessageSquare, Globe, LogOut, CheckCheck } from 'lucide-react';
-import type { Conversation, User } from '../../types/chat';
+import { Search, MessageSquare, Globe, LogOut, CheckCheck, Image as ImageIcon, Video as VideoIcon, FileText as FileIcon, Music as MusicIcon, Paperclip as AttachmentIcon } from 'lucide-react';
+import type { Conversation, User, Message } from '../../types/chat';
 import { useChatStore } from '../../store/useChatStore';
 import { useAuthStore } from '../../store/useAuthStore';
 import api from '../../services/api';
 import { formatRelativeDate } from '../../utils/dateUtils';
+
+const getMessagePreview = (message?: Message, otherUserUsername?: string): React.ReactNode => {
+  if (!message) {
+    return <span>{otherUserUsername ? `@${otherUserUsername}` : 'No messages yet'}</span>;
+  }
+
+  if (message.content) {
+    return <span>{message.content}</span>;
+  }
+
+  if (message.attachmentUrl) {
+    const type = message.attachmentType?.toLowerCase() || '';
+    
+    let Icon = AttachmentIcon;
+    let label = 'Attachment';
+
+    if (type.startsWith('image/')) {
+      Icon = ImageIcon;
+      label = 'Photo';
+    } else if (type.startsWith('video/')) {
+      Icon = VideoIcon;
+      label = 'Video';
+    } else if (type.startsWith('audio/')) {
+      Icon = MusicIcon;
+      label = 'Audio';
+    } else if (type === 'application/pdf' || message.attachmentName?.toLowerCase().endsWith('.pdf')) {
+      Icon = FileIcon;
+      label = 'PDF';
+    } else if (type.startsWith('text/') || message.attachmentName?.toLowerCase().endsWith('.txt')) {
+      Icon = FileIcon;
+      label = 'Document';
+    }
+
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <Icon className="w-3.5 h-3.5 shrink-0 opacity-60" />
+        <span>{label}</span>
+      </span>
+    );
+  }
+
+  return <span>No messages yet</span>;
+};
 
 interface ChatSidebarProps {
   conversations: Conversation[];
@@ -162,7 +205,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                           }`} />
                         )}
                         <p className="text-sm text-text-muted truncate">
-                          {lastMessage?.content || (otherUser.username ? `@${otherUser.username}` : 'No messages yet')}
+                          {getMessagePreview(lastMessage, otherUser.username)}
                         </p>
                       </div>
                       {(conv.unreadCount ?? 0) > 0 && (
