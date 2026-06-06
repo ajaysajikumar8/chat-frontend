@@ -6,6 +6,18 @@ export interface User {
   status: 'ONLINE' | 'OFFLINE' | 'AWAY';
   lastSeen?: string;
   isDiscoverable?: boolean;
+  bio?: string;
+  profilePhotoUrl?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface UserSettings {
+  isDiscoverable: boolean;
+  readReceiptsEnabled: boolean;
+  lastSeenVisibility: 'EVERYONE' | 'CONTACTS' | 'NOBODY';
+  profilePhotoVisibility: 'EVERYONE' | 'CONTACTS' | 'NOBODY';
+  notificationsEnabled: boolean;
+  notificationSoundEnabled: boolean;
 }
 
 export interface Message {

@@ -1,11 +1,5 @@
 import api from './api';
-
-export interface User {
-  id: string;
-  email: string;
-  displayName: string;
-  avatar?: string;
-}
+import type { User } from '../types/chat';
 
 export interface AuthResponse {
   token: string;

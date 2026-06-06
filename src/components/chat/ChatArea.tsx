@@ -1,5 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ArrowLeft, Send, MoreVertical, Image as ImageIcon, CheckCheck, ChevronDown, Paperclip, X, File as FileIcon, Download, Play, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { 
+  ArrowLeft, Send, MoreVertical, Image as ImageIcon, 
+  CheckCheck, ChevronDown, Paperclip, X, File as FileIcon, 
+  Download, Play, ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
+  ShieldAlert
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Virtuoso } from 'react-virtuoso';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { Conversation, Message } from '../../types/chat';
@@ -259,6 +265,48 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false);
+
+  // Check block status whenever conversation changes
+  useEffect(() => {
+    if (!conversation) return;
+    const otherParticipant = conversation.participants.find(p => p.userId !== currentUserId) || conversation.participants[0];
+    if (!otherParticipant) return;
+    
+    const checkBlockStatus = async () => {
+      try {
+        const res = await api.get('/users/me/blocked');
+        if (res.data?.data) {
+          const blockedList = res.data.data;
+          setIsBlocked(blockedList.some((u: any) => u.id === otherParticipant.user.id));
+        }
+      } catch (err) {
+        console.error("Failed to check block status", err);
+      }
+    };
+    checkBlockStatus();
+  }, [conversation, currentUserId]);
+
+  const handleBlockToggle = async () => {
+    if (!conversation) return;
+    const otherParticipant = conversation.participants.find(p => p.userId !== currentUserId) || conversation.participants[0];
+    if (!otherParticipant) return;
+    const targetUserId = otherParticipant.user.id;
+    setIsMenuOpen(false);
+    
+    try {
+      if (isBlocked) {
+        await api.delete(`/users/me/block/${targetUserId}`);
+        setIsBlocked(false);
+      } else {
+        await api.post(`/users/me/block`, { userIdToBlock: targetUserId });
+        setIsBlocked(true);
+      }
+    } catch (err) {
+      console.error("Failed to toggle block status", err);
+    }
+  };
 
   const [prevConversationId, setPrevConversationId] = useState<string | undefined>(conversation?.id);
 
@@ -272,6 +320,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     }
     setIsAtBottom(true);
     setUnreadWhileScrolled(0);
+    setIsMenuOpen(false);
   }
 
   const { 
@@ -582,9 +631,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         typingUsers.includes(otherUserId) ? (
           <div className="flex gap-3 max-w-[85%] pt-2 pb-4 px-4">
             <div className="shrink-0 w-8">
-              <div className="w-8 h-8 rounded-full bg-primary/20 text-primary-light flex items-center justify-center text-xs font-medium border border-primary/30">
-                {otherUserDisplayName.charAt(0).toUpperCase()}
-              </div>
+              {otherParticipant.user.avatarUrl ? (
+                <img src={otherParticipant.user.avatarUrl} alt={otherUserDisplayName} className="w-8 h-8 rounded-full object-cover border border-primary/10" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-primary/20 text-primary-light flex items-center justify-center text-xs font-medium border border-primary/30">
+                  {otherUserDisplayName.charAt(0).toUpperCase()}
+                </div>
+              )}
             </div>
             <div className="flex flex-col items-start">
               <div className="px-4 py-3 rounded-2xl bg-bg-surface-hover border border-border-subtle rounded-tl-sm flex items-center gap-1.5 h-[44px]">
@@ -646,9 +699,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </button>
           
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-primary/20 text-primary-light flex items-center justify-center font-semibold border border-primary/30">
-              {otherUser.displayName.charAt(0).toUpperCase()}
-            </div>
+            {otherUser.avatarUrl ? (
+              <img src={otherUser.avatarUrl} alt={otherUser.displayName} className="w-10 h-10 rounded-full object-cover border border-primary/10" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-primary/20 text-primary-light flex items-center justify-center font-semibold border border-primary/30">
+                {otherUser.displayName.charAt(0).toUpperCase()}
+              </div>
+            )}
             {status === 'ONLINE' && (
               <div className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success border-2 border-bg-surface rounded-full"></div>
             )}
@@ -662,9 +719,36 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         </div>
         
-        <button className="p-2 rounded-full hover:bg-bg-surface-hover text-text-muted transition-colors">
-          <MoreVertical className="w-5 h-5" />
-        </button>
+        <div className="relative">
+          <button 
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            className={`p-2 rounded-full hover:bg-bg-surface-hover text-text-muted hover:text-white transition-colors ${isMenuOpen ? 'bg-bg-surface-hover text-white' : ''}`}
+          >
+            <MoreVertical className="w-5 h-5" />
+          </button>
+          
+          <AnimatePresence>
+            {isMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setIsMenuOpen(false)} />
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95, y: -10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                  className="absolute right-0 mt-2 w-48 bg-bg-surface border border-border-subtle rounded-xl shadow-xl z-40 py-1.5 overflow-hidden"
+                >
+                  <button
+                    onClick={handleBlockToggle}
+                    className="w-full text-left px-4 py-2.5 text-sm text-danger hover:bg-bg-surface-hover/80 transition-colors flex items-center gap-2 font-medium"
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    {isBlocked ? 'Unblock User' : 'Block User'}
+                  </button>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Messages */}
@@ -724,9 +808,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   {!isMine && (
                     <div className="shrink-0 w-8">
                       {showAvatar && (
-                        <div className="w-8 h-8 rounded-full bg-primary/20 text-primary-light flex items-center justify-center text-xs font-medium border border-primary/30">
-                          {otherUser.displayName.charAt(0).toUpperCase()}
-                        </div>
+                        otherUser.avatarUrl ? (
+                          <img src={otherUser.avatarUrl} alt={otherUser.displayName} className="w-8 h-8 rounded-full object-cover border border-primary/10" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-primary/20 text-primary-light flex items-center justify-center text-xs font-medium border border-primary/30">
+                            {otherUser.displayName.charAt(0).toUpperCase()}
+                          </div>
+                        )
                       )}
                     </div>
                   )}
@@ -832,62 +920,78 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {/* Input */}
       <div className="p-4 bg-bg-base border-t border-border-subtle shrink-0">
-        {selectedFile && (
-          <div className="mb-3 p-3 bg-bg-surface border border-border-subtle rounded-xl flex items-center justify-between">
-            <div className="flex items-center gap-3 overflow-hidden">
-              {selectedFile.type.startsWith('image/') ? (
-                <div className="w-10 h-10 rounded bg-bg-surface-hover flex items-center justify-center overflow-hidden shrink-0">
-                  <img src={previewUrl || ''} alt="preview" className="w-full h-full object-cover" />
-                </div>
-              ) : (
-                <div className="w-10 h-10 rounded bg-primary/10 text-primary-light flex items-center justify-center shrink-0">
-                  <FileIcon className="w-5 h-5" />
-                </div>
-              )}
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-medium text-text-base truncate">{selectedFile.name}</span>
-                <span className="text-xs text-text-subtle">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>
-              </div>
-            </div>
-            <button onClick={removeSelectedFile} className="p-1.5 rounded-full hover:bg-bg-surface-hover text-text-muted transition-colors shrink-0">
-              <X className="w-5 h-5" />
+        {isBlocked ? (
+          <div className="flex flex-col items-center justify-center p-4 bg-danger/5 border border-danger/10 rounded-xl">
+            <p className="text-sm text-danger font-medium text-center">
+              You have blocked this user. Unblock them to send a message.
+            </p>
+            <button
+              onClick={handleBlockToggle}
+              className="mt-2 px-3.5 py-1.5 bg-danger hover:bg-danger-hover text-white rounded-lg text-xs font-semibold transition-colors shadow-md shadow-danger/20"
+            >
+              Unblock User
             </button>
           </div>
+        ) : (
+          <>
+            {selectedFile && (
+              <div className="mb-3 p-3 bg-bg-surface border border-border-subtle rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  {selectedFile.type.startsWith('image/') ? (
+                    <div className="w-10 h-10 rounded bg-bg-surface-hover flex items-center justify-center overflow-hidden shrink-0">
+                      <img src={previewUrl || ''} alt="preview" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded bg-primary/10 text-primary-light flex items-center justify-center shrink-0">
+                      <FileIcon className="w-5 h-5" />
+                    </div>
+                  )}
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-sm font-medium text-text-base truncate">{selectedFile.name}</span>
+                    <span className="text-xs text-text-subtle">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</span>
+                  </div>
+                </div>
+                <button onClick={removeSelectedFile} className="p-1.5 rounded-full hover:bg-bg-surface-hover text-text-muted transition-colors shrink-0">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+            
+            <div className="flex items-end gap-2 bg-bg-surface rounded-xl p-2 border border-border-subtle focus-within:border-primary-light/50 focus-within:ring-1 focus-within:ring-primary-light/50 transition-all">
+              <input type="file" ref={imageInputRef} onChange={handleFileSelect} accept="image/*,video/*" className="hidden" />
+              <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
+              
+              <button onClick={() => imageInputRef.current?.click()} className="p-2 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach Image or Video">
+                <ImageIcon className="w-5 h-5" />
+              </button>
+              <button onClick={() => fileInputRef.current?.click()} className="p-2 -ml-1 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach File">
+                <Paperclip className="w-5 h-5" />
+              </button>
+              
+              <textarea
+                value={inputText}
+                onChange={handleInputChange}
+                placeholder="Type a message..."
+                className="flex-1 max-h-32 min-h-[40px] bg-transparent border-none focus:ring-0 text-text-base placeholder:text-text-subtle resize-none py-2 px-2 text-sm"
+                rows={1}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+              />
+              
+              <button
+                onClick={handleSend}
+                disabled={!inputText.trim() && !selectedFile}
+                className="p-2 bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:hover:bg-primary text-white rounded-lg transition-colors shrink-0 relative"
+              >
+                <Send className="w-4 h-4" />
+              </button>
+            </div>
+          </>
         )}
-        
-        <div className="flex items-end gap-2 bg-bg-surface rounded-xl p-2 border border-border-subtle focus-within:border-primary-light/50 focus-within:ring-1 focus-within:ring-primary-light/50 transition-all">
-          <input type="file" ref={imageInputRef} onChange={handleFileSelect} accept="image/*,video/*" className="hidden" />
-          <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-          
-          <button onClick={() => imageInputRef.current?.click()} className="p-2 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach Image or Video">
-            <ImageIcon className="w-5 h-5" />
-          </button>
-          <button onClick={() => fileInputRef.current?.click()} className="p-2 -ml-1 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach File">
-            <Paperclip className="w-5 h-5" />
-          </button>
-          
-          <textarea
-            value={inputText}
-            onChange={handleInputChange}
-            placeholder="Type a message..."
-            className="flex-1 max-h-32 min-h-[40px] bg-transparent border-none focus:ring-0 text-text-base placeholder:text-text-subtle resize-none py-2 px-2 text-sm"
-            rows={1}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-          
-          <button
-            onClick={handleSend}
-            disabled={!inputText.trim() && !selectedFile}
-            className="p-2 bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:hover:bg-primary text-white rounded-lg transition-colors shrink-0 relative"
-          >
-            <Send className="w-4 h-4" />
-          </button>
-        </div>
       </div>
 
       {activeMediaId !== null && activeMediaIndex !== -1 && (
