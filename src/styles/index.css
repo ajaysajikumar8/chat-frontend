@@ -22,6 +22,7 @@
   
   /* Borders */
   --color-border-subtle: var(--color-slate-800);
+  --color-border-light: rgba(255, 255, 255, 0.08);
   
   /* Text */
   --color-text-base: var(--color-slate-200);

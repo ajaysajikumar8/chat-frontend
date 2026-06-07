@@ -1,11 +1,13 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ChatSidebar } from '../components/chat/ChatSidebar';
 import { ChatArea } from '../components/chat/ChatArea';
+import { ConversationDetails } from '../components/chat/ConversationDetails';
 import { useChatStore } from '../store/useChatStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import { usePushNotifications } from '../hooks/usePushNotifications';
+import { AnimatePresence } from 'framer-motion';
 import type { Message } from '../types/chat';
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -24,6 +26,12 @@ export const ChatPage: React.FC = () => {
   
   const [searchParams, setSearchParams] = useSearchParams();
   const { subscribe, permission, pushError, setPushError } = usePushNotifications();
+  const [showDetails, setShowDetails] = useState(false);
+
+  // Automatically close details when the active conversation changes
+  useEffect(() => {
+    setShowDetails(false);
+  }, [selectedConversationId]);
 
   // Handle URL deep linking for push notifications
   useEffect(() => {
@@ -134,7 +142,17 @@ export const ChatPage: React.FC = () => {
           isVisible={selectedConversationId !== null}
           currentUserId={user?.id || ''}
           onNewMessage={() => tryMarkRead(selectedConversationId)}
+          onToggleDetails={() => setShowDetails(!showDetails)}
         />
+        <AnimatePresence>
+          {showDetails && selectedConversation && (
+            <ConversationDetails
+              conversation={selectedConversation}
+              currentUserId={user?.id || ''}
+              onClose={() => setShowDetails(false)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

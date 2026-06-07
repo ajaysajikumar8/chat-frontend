@@ -2,17 +2,19 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { 
   ArrowLeft, Send, MoreVertical, Image as ImageIcon, 
   CheckCheck, ChevronDown, Paperclip, X, File as FileIcon, 
-  Download, Play, ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
-  ShieldAlert, VolumeX, Volume2
+  Download, Play, ShieldAlert, VolumeX, Volume2, Info, Trash2, Check
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Virtuoso } from 'react-virtuoso';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import type { Conversation, Message } from '../../types/chat';
 import { useChatStore } from '../../store/useChatStore';
+import { MessageContextMenu } from './MessageContextMenu';
+import { DeleteMessageModal } from './DeleteMessageModal';
 import { formatMessageGroupDate } from '../../utils/dateUtils';
 import { emitTypingStatus } from '../../services/socket';
 import api from '../../services/api';
+import { MediaViewerModal } from './MediaViewerModal';
 
 const EMPTY_ARRAY: string[] = [];
 
@@ -70,169 +72,7 @@ const VideoWithRetry: React.FC<MediaWithRetryProps> = ({ src, msgId, className, 
   return <video src={currentSrc} controls={controls} onError={handleError} className={className} />;
 };
 
-interface MediaViewerModalProps {
-  mediaMessages: Message[];
-  currentIndex: number;
-  onClose: () => void;
-  onNavigate: (index: number) => void;
-}
-
-const MediaViewerModal: React.FC<MediaViewerModalProps> = ({ mediaMessages, currentIndex, onClose, onNavigate }) => {
-  const activeMedia = mediaMessages[currentIndex];
-  const [zoom, setZoom] = useState(1);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    setZoom(1);
-  }, [currentIndex]);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      } else if (e.key === 'ArrowLeft' && currentIndex > 0) {
-        onNavigate(currentIndex - 1);
-      } else if (e.key === 'ArrowRight' && currentIndex < mediaMessages.length - 1) {
-        onNavigate(currentIndex + 1);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentIndex, mediaMessages.length, onClose, onNavigate]);
-
-  if (!activeMedia) return null;
-
-  const isImage = activeMedia.attachmentType?.startsWith('image/');
-  const isVideo = activeMedia.attachmentType?.startsWith('video/');
-
-  const handleZoomIn = () => setZoom(z => Math.min(z + 0.25, 3));
-  const handleZoomOut = () => setZoom(z => Math.max(z - 0.25, 0.5));
-  const handleZoomReset = () => setZoom(1);
-
-  return (
-    <div 
-      ref={containerRef}
-      className="fixed inset-0 z-50 flex flex-col justify-between bg-black/95 backdrop-blur-md select-none outline-none"
-      onClick={onClose}
-    >
-      {/* Top Header Controls */}
-      <div 
-        className="h-16 px-6 flex items-center justify-between text-white bg-gradient-to-b from-black/60 to-transparent z-50"
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex flex-col min-w-0">
-          <span className="text-sm font-semibold truncate pr-4">{activeMedia.attachmentName || 'Media File'}</span>
-          <span className="text-xs opacity-75">
-            Sent by {activeMedia.sender?.displayName || 'User'} • {new Date(activeMedia.createdAt).toLocaleDateString()}
-          </span>
-        </div>
-
-        {/* Toolbar */}
-        <div className="flex items-center gap-4">
-          {isImage && (
-            <div className="flex items-center bg-white/10 rounded-lg p-0.5 border border-white/5">
-              <button 
-                onClick={handleZoomOut}
-                disabled={zoom <= 0.5}
-                className="p-1.5 hover:bg-white/10 rounded-md transition-colors disabled:opacity-50"
-                title="Zoom Out"
-              >
-                <ZoomOut className="w-4 h-4" />
-              </button>
-              <button 
-                onClick={handleZoomReset}
-                className="px-2 text-xs font-medium hover:bg-white/10 rounded-md h-7 transition-colors"
-                title="Reset Zoom"
-              >
-                {Math.round(zoom * 100)}%
-              </button>
-              <button 
-                onClick={handleZoomIn}
-                disabled={zoom >= 3}
-                className="p-1.5 hover:bg-white/10 rounded-md transition-colors disabled:opacity-50"
-                title="Zoom In"
-              >
-                <ZoomIn className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-          
-          <button 
-            onClick={onClose}
-            className="p-2 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors"
-            title="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="flex-1 flex items-center justify-center relative p-4 overflow-hidden">
-        {/* Previous Navigation Arrow */}
-        {currentIndex > 0 && (
-          <button 
-            onClick={e => {
-              e.stopPropagation();
-              onNavigate(currentIndex - 1);
-            }}
-            className="absolute left-6 z-50 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer border border-white/5 shadow-lg shadow-black/30 animate-fade-in"
-          >
-            <ChevronLeft className="w-6 h-6" />
-          </button>
-        )}
-
-        {/* Media Wrapper */}
-        <div 
-          className="max-w-full max-h-full flex items-center justify-center relative"
-          onClick={e => e.stopPropagation()}
-        >
-          {isImage && (
-            <img 
-              src={activeMedia.attachmentUrl} 
-              alt={activeMedia.attachmentName || 'Preview'} 
-              style={{ transform: `scale(${zoom})` }}
-              className="max-w-[90vw] max-h-[80vh] object-contain rounded transition-transform duration-200 ease-out"
-            />
-          )}
-
-          {isVideo && (
-            <div className="relative max-w-[90vw] max-h-[80vh] flex items-center justify-center">
-              <video 
-                ref={videoRef}
-                src={activeMedia.attachmentUrl} 
-                className="max-w-[90vw] max-h-[80vh] object-contain rounded"
-                autoPlay
-                controls
-              />
-            </div>
-          )}
-        </div>
-
-        {/* Next Navigation Arrow */}
-        {currentIndex < mediaMessages.length - 1 && (
-          <button 
-            onClick={e => {
-              e.stopPropagation();
-              onNavigate(currentIndex + 1);
-            }}
-            className="absolute right-6 z-50 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer border border-white/5 shadow-lg shadow-black/30 animate-fade-in"
-          >
-            <ChevronRight className="w-6 h-6" />
-          </button>
-        )}
-      </div>
-
-      {/* Footer Meta Indicator */}
-      <div 
-        className="h-16 flex items-center justify-center text-white/60 text-xs bg-gradient-to-t from-black/40 to-transparent pointer-events-none z-50"
-      >
-        Media {currentIndex + 1} of {mediaMessages.length}
-      </div>
-    </div>
-  );
-};
+// Extracted MediaViewerModal to its own file
 
 interface ChatAreaProps {
   conversation: Conversation | null;
@@ -241,6 +81,7 @@ interface ChatAreaProps {
   isVisible: boolean;
   currentUserId: string;
   onNewMessage: () => void;
+  onToggleDetails?: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -250,6 +91,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   isVisible,
   currentUserId,
   onNewMessage,
+  onToggleDetails,
 }) => {
   const [inputText, setInputText] = useState('');
   const isSendingRef = useRef(false);
@@ -268,6 +110,92 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [showMuteSubmenu, setShowMuteSubmenu] = useState(false);
+
+  // Context Menu & Edit State
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; message: any } | null>(null);
+  const [editingMessage, setEditingMessage] = useState<any | null>(null);
+  const [messageToDelete, setMessageToDelete] = useState<any | null>(null);
+  const touchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent, message: any) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      message,
+    });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent, message: any) => {
+    const touch = e.touches[0];
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+    touchTimeoutRef.current = setTimeout(() => {
+      setContextMenu({
+        x: clientX,
+        y: clientY,
+        message,
+      });
+    }, 600);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+      touchTimeoutRef.current = null;
+    }
+  };
+
+  const handleCopyMessage = (message: any) => {
+    if (message.content) {
+      navigator.clipboard.writeText(message.content);
+    }
+  };
+
+  const handleStartEdit = (message: any) => {
+    setEditingMessage(message);
+    setInputText(message.content || '');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setInputText('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMessage) return;
+    const trimmed = inputText.trim();
+    if (!trimmed) return;
+    try {
+      await editMessage(editingMessage.id, trimmed);
+      handleCancelEdit();
+    } catch (err) {
+      console.error(err);
+      alert('Failed to edit message. The 15-minute editing window may have expired.');
+    }
+  };
+
+  const handleConfirmDelete = async (type: 'me' | 'everyone') => {
+    if (!messageToDelete) return;
+    try {
+      await deleteMessage(messageToDelete.id, type);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to delete message. The deletion window may have expired.');
+    } finally {
+      setMessageToDelete(null);
+    }
+  };
+
+  const canEdit = (msg: any) => {
+    const timeDiff = Date.now() - new Date(msg.createdAt).getTime();
+    return timeDiff <= 15 * 60 * 1000;
+  };
+
+  const canDeleteEveryone = (msg: any) => {
+    const timeDiff = Date.now() - new Date(msg.createdAt).getTime();
+    return timeDiff <= 24 * 60 * 60 * 1000;
+  };
 
   useEffect(() => {
     if (!isMenuOpen) {
@@ -292,7 +220,9 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     hasFetchedHistory,
     firstItemIndex: storeFirstItemIndex,
     updateConversationBlockStatus,
-    muteConversation
+    muteConversation,
+    editMessage,
+    deleteMessage
   } = useChatStore();
 
   const handleMute = async (duration: string) => {
@@ -417,6 +347,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   }, [previewUrl]);
 
   const handleSend = async () => {
+    if (editingMessage) {
+      await handleSaveEdit();
+      return;
+    }
     const text = inputText.trim();
     if ((!text && !selectedFile) || isSendingRef.current || !conversation) return;
     
@@ -509,6 +443,17 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
   const mediaMessages = messages.filter(m => m.attachmentUrl && (m.attachmentType?.startsWith('image/') || m.attachmentType?.startsWith('video/')));
   const activeMediaIndex = mediaMessages.findIndex(m => m.id === activeMediaId);
+
+  const mediaViewerItems = useMemo(() => {
+    return mediaMessages.map(m => ({
+      id: m.id,
+      attachmentUrl: m.attachmentUrl || '',
+      attachmentType: m.attachmentType || '',
+      attachmentName: m.attachmentName,
+      createdAt: m.createdAt.toString(),
+      senderName: m.sender?.displayName || 'User'
+    }));
+  }, [mediaMessages]);
 
   const handleNavigateMedia = (index: number) => {
     if (index >= 0 && index < mediaMessages.length) {
@@ -699,9 +644,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     >
       {/* Header */}
       <div className="h-[73px] px-4 border-b border-border-subtle flex items-center justify-between bg-bg-base/80 backdrop-blur-sm z-10 shrink-0">
-        <div className="flex items-center gap-3">
+        <div 
+          onClick={onToggleDetails}
+          className="flex items-center gap-3 cursor-pointer hover:opacity-85 select-none transition-all"
+          title="Click to view contact info"
+        >
           <button
-            onClick={onBack}
+            onClick={(e) => {
+              e.stopPropagation();
+              onBack();
+            }}
             className="md:hidden p-2 -ml-2 rounded-full hover:bg-bg-surface-hover text-text-base transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -753,6 +705,19 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     if (!showMuteSubmenu) {
                       return (
                         <>
+                          <button
+                            onClick={() => {
+                              setIsMenuOpen(false);
+                              onToggleDetails?.();
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors flex items-center gap-2 font-medium"
+                          >
+                            <Info className="w-4 h-4 text-text-muted" />
+                            View Info
+                          </button>
+
+                          <div className="border-t border-border-subtle/50 my-1" />
+
                           {isMuted ? (
                             <button
                               onClick={handleUnmute}
@@ -903,57 +868,77 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </div>
                   )}
                   
-                  <div className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} max-w-full`}>
+                  <div 
+                    className={`flex flex-col ${isMine ? 'items-end' : 'items-start'} max-w-full`}
+                    onContextMenu={(e) => handleContextMenu(e, msg)}
+                    onTouchStart={(e) => handleTouchStart(e, msg)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchEnd}
+                  >
                     <div
-                      className={`px-3 pt-2 pb-1.5 rounded-2xl text-[15px] max-w-full shadow-sm ${
-                        isMine
-                          ? 'bg-primary text-white rounded-tr-sm'
-                          : 'bg-bg-surface-hover text-text-base rounded-tl-sm border border-border-subtle'
+                      className={`px-3 pt-2 pb-1.5 rounded-2xl text-[15px] max-w-full shadow-sm select-none ${
+                        msg.isDeleted
+                          ? 'bg-bg-surface-hover/30 border border-border-subtle/50 text-text-subtle italic rounded-tr-sm'
+                          : isMine
+                            ? 'bg-primary text-white rounded-tr-sm'
+                            : 'bg-bg-surface-hover text-text-base rounded-tl-sm border border-border-subtle'
                       }`}
                     >
                       <div className="flex flex-wrap items-end gap-x-2 gap-y-1">
                         <div className="flex flex-col gap-2 max-w-full">
-                          {msg.attachmentUrl && (
-                            <div className="pb-1 rounded-lg overflow-hidden max-w-[280px]">
-                              {msg.attachmentType?.startsWith('image/') ? (
-                                <div className="cursor-pointer" onClick={() => setActiveMediaId(msg.id)}>
-                                  <ImageWithRetry src={msg.attachmentUrl} msgId={msg.id} alt={msg.attachmentName || 'Image'} className="w-full h-auto object-cover rounded-lg" />
-                                </div>
-                              ) : msg.attachmentType?.startsWith('video/') ? (
-                                <div className="relative group cursor-pointer" onClick={() => setActiveMediaId(msg.id)}>
-                                  <VideoWithRetry src={msg.attachmentUrl} msgId={msg.id} controls={false} className="w-full h-auto rounded-lg max-h-[240px] object-cover pointer-events-none" />
-                                  <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/20 transition-colors rounded-lg">
-                                    <div className="w-11 h-11 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center border border-white/20 shadow-md transform group-hover:scale-105 transition-all">
-                                      <Play className="w-4 h-4 fill-current ml-0.5 text-white" />
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <a 
-                                  href={msg.attachmentUrl} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  onClick={(e) => handleDownloadClick(e, msg.id)}
-                                  className={`flex items-center gap-2 p-3 rounded-lg ${isMine ? 'bg-primary-hover/50 text-white hover:bg-primary-hover' : 'bg-bg-surface border border-border-subtle hover:bg-bg-surface-hover text-text-base'} transition-colors`}
-                                >
-                                  <FileIcon className="w-8 h-8 shrink-0 opacity-80" />
-                                  <div className="flex flex-col min-w-0">
-                                    <span className="text-sm font-medium truncate">{msg.attachmentName || 'Download File'}</span>
-                                    <span className="text-xs opacity-70 uppercase">{msg.attachmentType?.split('/')[1] || 'FILE'}</span>
-                                  </div>
-                                  <Download className="w-4 h-4 ml-auto opacity-70" />
-                                </a>
-                              )}
-                            </div>
-                          )}
-                          {msg.content && (
-                            <span className="text-left leading-relaxed max-w-full break-words">
-                              {msg.content}
+                          {msg.isDeleted ? (
+                            <span className="text-left leading-relaxed max-w-full break-words italic text-text-subtle flex items-center gap-1.5 py-0.5">
+                              <Trash2 size={13} className="opacity-70 shrink-0" />
+                              This message was deleted
                             </span>
+                          ) : (
+                            <>
+                              {msg.attachmentUrl && (
+                                <div className="pb-1 rounded-lg overflow-hidden max-w-[280px]">
+                                  {msg.attachmentType?.startsWith('image/') ? (
+                                    <div className="cursor-pointer" onClick={() => setActiveMediaId(msg.id)}>
+                                      <ImageWithRetry src={msg.attachmentUrl} msgId={msg.id} alt={msg.attachmentName || 'Image'} className="w-full h-auto object-cover rounded-lg" />
+                                    </div>
+                                  ) : msg.attachmentType?.startsWith('video/') ? (
+                                    <div className="relative group cursor-pointer" onClick={() => setActiveMediaId(msg.id)}>
+                                      <VideoWithRetry src={msg.attachmentUrl} msgId={msg.id} controls={false} className="w-full h-auto rounded-lg max-h-[240px] object-cover pointer-events-none" />
+                                      <div className="absolute inset-0 flex items-center justify-center bg-black/10 group-hover:bg-black/20 transition-colors rounded-lg">
+                                        <div className="w-11 h-11 rounded-full bg-black/50 backdrop-blur-sm text-white flex items-center justify-center border border-white/20 shadow-md transform group-hover:scale-105 transition-all">
+                                          <Play className="w-4 h-4 fill-current ml-0.5 text-white" />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <a 
+                                      href={msg.attachmentUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => handleDownloadClick(e, msg.id)}
+                                      className={`flex items-center gap-2 p-3 rounded-lg ${isMine ? 'bg-primary-hover/50 text-white hover:bg-primary-hover' : 'bg-bg-surface border border-border-subtle hover:bg-bg-surface-hover text-text-base'} transition-colors`}
+                                    >
+                                      <FileIcon className="w-8 h-8 shrink-0 opacity-80" />
+                                      <div className="flex flex-col min-w-0">
+                                        <span className="text-sm font-medium truncate">{msg.attachmentName || 'Download File'}</span>
+                                        <span className="text-xs opacity-70 uppercase">{msg.attachmentType?.split('/')[1] || 'FILE'}</span>
+                                      </div>
+                                      <Download className="w-4 h-4 ml-auto opacity-70" />
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                              {msg.content && (
+                                <span className="text-left leading-relaxed max-w-full break-words">
+                                  {msg.content}
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                         
-                        <div className={`flex items-center justify-end gap-1 shrink-0 ml-auto pb-[1px] ${isMine ? 'text-white/80' : 'text-text-subtle'}`}>
+                        <div className={`flex items-center justify-end gap-1 shrink-0 ml-auto pb-[1px] ${isMine && !msg.isDeleted ? 'text-white/80' : 'text-text-subtle'}`}>
+                          {msg.isEdited && !msg.isDeleted && (
+                            <span className="text-[9.5px] opacity-75 font-normal mr-1">edited</span>
+                          )}
                           <span className="text-[10.5px] font-medium leading-none tracking-wide">
                             {new Date(msg.createdAt).toLocaleTimeString([], {
                               hour: '2-digit',
@@ -1024,6 +1009,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         ) : (
           <>
+            {editingMessage && (
+              <div className="mb-2 px-3 py-2 bg-primary/5 border-l-2 border-primary rounded-r-xl flex items-center justify-between text-xs text-text-base">
+                <div className="flex flex-col min-w-0">
+                  <span className="font-semibold text-primary">Editing Message</span>
+                  <span className="text-text-subtle truncate mt-0.5">{editingMessage.content}</span>
+                </div>
+                <button 
+                  onClick={handleCancelEdit} 
+                  className="p-1 text-text-muted hover:text-text-base rounded-full hover:bg-bg-surface-hover transition-colors shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {selectedFile && (
               <div className="mb-3 p-3 bg-bg-surface border border-border-subtle rounded-xl flex items-center justify-between">
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -1051,33 +1051,45 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               <input type="file" ref={imageInputRef} onChange={handleFileSelect} accept="image/*,video/*" className="hidden" />
               <input type="file" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
               
-              <button onClick={() => imageInputRef.current?.click()} className="p-2 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach Image or Video">
-                <ImageIcon className="w-5 h-5" />
-              </button>
-              <button onClick={() => fileInputRef.current?.click()} className="p-2 -ml-1 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach File">
-                <Paperclip className="w-5 h-5" />
-              </button>
+              {!editingMessage && (
+                <>
+                  <button onClick={() => imageInputRef.current?.click()} className="p-2 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach Image or Video">
+                    <ImageIcon className="w-5 h-5" />
+                  </button>
+                  <button onClick={() => fileInputRef.current?.click()} className="p-2 -ml-1 text-text-muted hover:text-primary-light hover:bg-bg-surface-hover rounded-lg transition-colors shrink-0" title="Attach File">
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+                </>
+              )}
               
               <textarea
                 value={inputText}
                 onChange={handleInputChange}
-                placeholder="Type a message..."
+                placeholder={editingMessage ? "Edit message..." : "Type a message..."}
                 className="flex-1 max-h-32 min-h-[40px] bg-transparent border-none focus:ring-0 text-text-base placeholder:text-text-subtle resize-none py-2 px-2 text-sm"
                 rows={1}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleSend();
+                  } else if (e.key === 'Escape') {
+                    if (editingMessage) {
+                      handleCancelEdit();
+                    }
                   }
                 }}
               />
               
               <button
                 onClick={handleSend}
-                disabled={!inputText.trim() && !selectedFile}
+                disabled={editingMessage ? !inputText.trim() : (!inputText.trim() && !selectedFile)}
                 className="p-2 bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:hover:bg-primary text-white rounded-lg transition-colors shrink-0 relative"
               >
-                <Send className="w-4 h-4" />
+                {editingMessage ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </button>
             </div>
           </>
@@ -1086,12 +1098,43 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
       {activeMediaId !== null && activeMediaIndex !== -1 && (
         <MediaViewerModal 
-          mediaMessages={mediaMessages}
+          items={mediaViewerItems}
           currentIndex={activeMediaIndex}
           onClose={handleCloseMediaViewer}
           onNavigate={handleNavigateMedia}
         />
       )}
+
+      {contextMenu && (
+        <MessageContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          onEdit={() => handleStartEdit(contextMenu.message)}
+          onDelete={() => {
+            setMessageToDelete(contextMenu.message);
+            setContextMenu(null);
+          }}
+          onCopy={() => handleCopyMessage(contextMenu.message)}
+          isOwnMessage={contextMenu.message.senderId === currentUserId}
+          canEdit={canEdit(contextMenu.message)}
+          isText={!!contextMenu.message.content}
+          isDeleted={!!contextMenu.message.isDeleted}
+        />
+      )}
+
+      <DeleteMessageModal
+        isOpen={messageToDelete !== null}
+        onClose={() => setMessageToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        canDeleteEveryone={
+          messageToDelete
+            ? messageToDelete.senderId === currentUserId &&
+              !messageToDelete.isDeleted &&
+              canDeleteEveryone(messageToDelete)
+            : false
+        }
+      />
     </div>
   );
 };

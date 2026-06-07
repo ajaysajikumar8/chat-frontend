@@ -29,6 +29,9 @@ export interface Message {
   attachmentType?: string;
   attachmentName?: string;
   createdAt: string;
+  updatedAt?: string;
+  isEdited?: boolean;
+  isDeleted?: boolean;
   sender?: User;
   optimisticId?: string;
   status?: 'sending' | 'sent' | 'error';

@@ -76,6 +76,11 @@ export const connectSocket = () => {
     useChatStore.getState().deleteMessageLocally(conversationId, messageId);
   });
 
+  socket.on('message_deleted_for_me', ({ messageId, conversationId }: { messageId: string; conversationId: string }) => {
+    useChatStore.getState().deleteMessageLocally(conversationId, messageId);
+    useChatStore.getState().fetchConversations();
+  });
+
   socket.on('typing_start', ({ conversationId, userId }: { conversationId: string; userId: string }) => {
     useChatStore.getState().setTyping(conversationId, userId, true);
   });

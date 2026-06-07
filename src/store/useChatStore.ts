@@ -40,6 +40,8 @@ interface ChatState {
   startConversation: (user: User) => Promise<void>;
   markConversationRead: (conversationId: string) => Promise<void>;
   muteConversation: (conversationId: string, duration: string) => Promise<void>;
+  editMessage: (messageId: string, content: string) => Promise<void>;
+  deleteMessage: (messageId: string, type: 'me' | 'everyone') => Promise<void>;
 }
 
 // Module-level variable to manage typing timeouts (TTL) without bloating the Zustand state
@@ -164,9 +166,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   }),
 
   deleteMessageLocally: (conversationId, messageId) => set((state) => {
-    const currentMessages = state.messages[conversationId];
-    if (!currentMessages) return state;
-
+    const currentMessages = state.messages[conversationId] || [];
     const updatedMessages = currentMessages.filter((m) => m.id !== messageId);
     
     return {
@@ -487,6 +487,38 @@ export const useChatStore = create<ChatState>((set, get) => ({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error('Failed to mute conversation:', error);
+    }
+  },
+
+  editMessage: async (messageId: string, content: string) => {
+    try {
+      const response = await api.put(`/messages/${messageId}`, { content });
+      const updatedMessage = response.data.data;
+      get().updateMessageLocally(updatedMessage);
+    } catch (error) {
+      console.error('Failed to edit message:', error);
+      throw error;
+    }
+  },
+
+  deleteMessage: async (messageId: string, type: 'me' | 'everyone') => {
+    try {
+      const response = await api.delete(`/messages/${messageId}`, {
+        params: { type },
+      });
+      const selectedId = get().selectedConversationId;
+      if (selectedId) {
+        if (type === 'me') {
+          get().deleteMessageLocally(selectedId, messageId);
+          get().fetchConversations();
+        } else {
+          const updatedMessage = response.data.data;
+          get().updateMessageLocally(updatedMessage);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to delete message:', error);
+      throw error;
     }
   },
 }));
