@@ -10,6 +10,29 @@ import { useChatStore } from '../../store/useChatStore';
 import { MediaViewerModal } from './MediaViewerModal';
 import type { Conversation } from '../../types/chat';
 
+const SharedImage: React.FC<{ src: string; alt: string }> = ({ src, alt }) => {
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  return (
+    <div className="relative w-full h-full bg-bg-surface-hover overflow-hidden">
+      {!isLoaded && (
+        <div className="absolute inset-0 bg-bg-surface-hover/80 animate-pulse flex items-center justify-center">
+          <ImageIcon className="w-5 h-5 text-text-subtle/30" />
+        </div>
+      )}
+      <img
+        src={src}
+        alt={alt}
+        className={`w-full h-full object-cover transition-all duration-300 ${
+          isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+        }`}
+        onLoad={() => setIsLoaded(true)}
+        loading="lazy"
+      />
+    </div>
+  );
+};
+
 interface SharedAttachment {
   messageId: string;
   attachmentUrl: string;
@@ -62,6 +85,9 @@ export const ConversationDetails: React.FC<ConversationDetailsProps> = ({
   const [hasMoreMedia, setHasMoreMedia] = useState(true);
   const [hasMoreDocs, setHasMoreDocs] = useState(true);
   const [isLoadingAttachments, setIsLoadingAttachments] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
+
+  const sentinelRef = React.useRef<HTMLDivElement>(null);
 
   const [activeMediaId, setActiveMediaId] = useState<string | null>(null);
   const [isMuteMenuOpen, setIsMuteMenuOpen] = useState(false);
@@ -103,6 +129,7 @@ export const ConversationDetails: React.FC<ConversationDetailsProps> = ({
 
   // Fetch shared attachments
   const fetchAttachments = useCallback(async (tab: 'media' | 'docs', isLoadMore = false) => {
+    if (isLoadingAttachments) return;
     if (conversation.id.startsWith('temp_')) {
       setHasMoreMedia(false);
       setHasMoreDocs(false);
@@ -118,11 +145,27 @@ export const ConversationDetails: React.FC<ConversationDetailsProps> = ({
       const { attachments, nextCursor, hasMore } = res.data.data;
 
       if (tab === 'media') {
-        setMedia(prev => isLoadMore ? [...prev, ...attachments] : attachments);
+        setMedia(prev => {
+          const combined = isLoadMore ? [...prev, ...attachments] : attachments;
+          const seen = new Set<string>();
+          return combined.filter(item => {
+            if (seen.has(item.messageId)) return false;
+            seen.add(item.messageId);
+            return true;
+          });
+        });
         setMediaCursor(nextCursor);
         setHasMoreMedia(hasMore);
       } else {
-        setDocs(prev => isLoadMore ? [...prev, ...attachments] : attachments);
+        setDocs(prev => {
+          const combined = isLoadMore ? [...prev, ...attachments] : attachments;
+          const seen = new Set<string>();
+          return combined.filter(item => {
+            if (seen.has(item.messageId)) return false;
+            seen.add(item.messageId);
+            return true;
+          });
+        });
         setDocsCursor(nextCursor);
         setHasMoreDocs(hasMore);
       }
@@ -131,12 +174,70 @@ export const ConversationDetails: React.FC<ConversationDetailsProps> = ({
     } finally {
       setIsLoadingAttachments(false);
     }
-  }, [conversation.id, mediaCursor, docsCursor]);
+  }, [conversation.id, mediaCursor, docsCursor, isLoadingAttachments]);
 
-  // Fetch attachments on mount or tab change
+  // Reset all states when conversation ID changes
   useEffect(() => {
-    fetchAttachments(activeTab, false);
-  }, [activeTab, conversation.id]);
+    setMedia([]);
+    setDocs([]);
+    setMediaCursor(null);
+    setDocsCursor(null);
+    setHasMoreMedia(true);
+    setHasMoreDocs(true);
+  }, [conversation.id]);
+
+  // Fetch first page on mount, conversation change, or tab change
+  useEffect(() => {
+    if (conversation.id.startsWith('temp_')) return;
+    
+    const hasData = activeTab === 'media' ? media.length > 0 : docs.length > 0;
+    const hasMore = activeTab === 'media' ? hasMoreMedia : hasMoreDocs;
+    
+    if (!hasData && hasMore && !isLoadingAttachments) {
+      fetchAttachments(activeTab, false);
+    }
+  }, [conversation.id, activeTab, media.length, docs.length, hasMoreMedia, hasMoreDocs, isLoadingAttachments, fetchAttachments]);
+
+  // Delayed displaying of loading indicator to prevent flashing on fast network responses
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isLoadingAttachments) {
+      timer = setTimeout(() => {
+        setShowLoader(true);
+      }, 250);
+    } else {
+      setShowLoader(false);
+    }
+    return () => clearTimeout(timer);
+  }, [isLoadingAttachments]);
+
+  // IntersectionObserver for automated infinite scroll loading
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting) {
+          const hasMore = activeTab === 'media' ? hasMoreMedia : hasMoreDocs;
+          if (hasMore && !isLoadingAttachments && !conversation.id.startsWith('temp_')) {
+            fetchAttachments(activeTab, true);
+          }
+        }
+      },
+      {
+        root: null,
+        rootMargin: '100px', // trigger fetch before reaching the bottom
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.unobserve(sentinel);
+    };
+  }, [activeTab, hasMoreMedia, hasMoreDocs, isLoadingAttachments, fetchAttachments, conversation.id]);
 
   // Handle Mute Action
   const handleMuteToggle = async (duration: string) => {
@@ -388,48 +489,35 @@ export const ConversationDetails: React.FC<ConversationDetailsProps> = ({
                       <span className="text-xs text-text-subtle">No shared media yet</span>
                     </div>
                   ) : (
-                    <>
-                      <div className="grid grid-cols-3 gap-2">
-                        {media.map((item) => (
-                          <div
-                            key={item.messageId}
-                            onClick={() => setActiveMediaId(item.messageId)}
-                            className="aspect-square bg-bg-surface-hover rounded-xl overflow-hidden cursor-pointer relative border border-border-subtle/40 hover:scale-[1.03] transition-all duration-200 group shadow-sm"
-                          >
-                            {item.attachmentType.startsWith('image/') ? (
-                              <img
+                    <div className="grid grid-cols-3 gap-2">
+                      {media.map((item) => (
+                        <div
+                          key={item.messageId}
+                          onClick={() => setActiveMediaId(item.messageId)}
+                          className="aspect-square bg-bg-surface-hover rounded-xl overflow-hidden cursor-pointer relative border border-border-subtle/40 hover:scale-[1.03] transition-all duration-200 group shadow-sm"
+                          style={{ contentVisibility: 'auto', containIntrinsicSize: '110px' }}
+                        >
+                          {item.attachmentType.startsWith('image/') ? (
+                            <SharedImage
+                              src={item.attachmentUrl}
+                              alt={item.attachmentName}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center relative bg-bg-surface-hover">
+                              <video
                                 src={item.attachmentUrl}
-                                alt={item.attachmentName}
-                                className="w-full h-full object-cover"
-                                loading="lazy"
+                                className="w-full h-full object-cover pointer-events-none"
                               />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center relative bg-bg-surface-hover">
-                                <video
-                                  src={item.attachmentUrl}
-                                  className="w-full h-full object-cover pointer-events-none"
-                                />
-                                <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
-                                  <div className="w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center border border-white/10 shadow shadow-black/50">
-                                    <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
-                                  </div>
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition-colors">
+                                <div className="w-7 h-7 rounded-full bg-black/60 text-white flex items-center justify-center border border-white/10 shadow shadow-black/50">
+                                  <Play className="w-2.5 h-2.5 fill-current ml-0.5" />
                                 </div>
                               </div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-
-                      {hasMoreMedia && (
-                        <button
-                          disabled={isLoadingAttachments}
-                          onClick={() => fetchAttachments('media', true)}
-                          className="w-full py-2 bg-bg-surface-hover hover:bg-bg-surface text-xs font-semibold text-text-base rounded-xl border border-border-subtle transition-all duration-200 disabled:opacity-50"
-                        >
-                          {isLoadingAttachments ? 'Loading...' : 'Load More Media'}
-                        </button>
-                      )}
-                    </>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -443,45 +531,56 @@ export const ConversationDetails: React.FC<ConversationDetailsProps> = ({
                       <span className="text-xs text-text-subtle">No shared documents yet</span>
                     </div>
                   ) : (
-                    <>
-                      <div className="space-y-2">
-                        {docs.map((doc) => (
-                          <div
-                            key={doc.messageId}
-                            onClick={(e) => handleDownloadClick(e, doc.messageId)}
-                            className="p-3 bg-bg-surface-hover/40 border border-border-subtle/50 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-bg-surface hover:border-primary/20 transition-all duration-200 group"
-                          >
-                            <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary-light flex items-center justify-center shrink-0 border border-primary/20">
-                              <FileIcon className="w-5 h-5" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h5 className="text-sm font-medium text-text-base truncate group-hover:text-primary-light transition-colors" title={doc.attachmentName}>
-                                {doc.attachmentName}
-                              </h5>
-                              <p className="text-xs text-text-subtle mt-0.5 uppercase">
-                                {doc.attachmentType.split('/')[1] || 'FILE'}
-                              </p>
-                            </div>
-                            <button className="p-2 text-text-muted hover:text-white rounded-lg hover:bg-bg-surface-hover transition-colors shrink-0">
-                              <Download className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      {hasMoreDocs && (
-                        <button
-                          disabled={isLoadingAttachments}
-                          onClick={() => fetchAttachments('docs', true)}
-                          className="w-full py-2 bg-bg-surface-hover hover:bg-bg-surface text-xs font-semibold text-text-base rounded-xl border border-border-subtle transition-all duration-200 disabled:opacity-50"
+                    <div className="space-y-2">
+                      {docs.map((doc) => (
+                        <div
+                          key={doc.messageId}
+                          onClick={(e) => handleDownloadClick(e, doc.messageId)}
+                          className="p-3 bg-bg-surface-hover/40 border border-border-subtle/50 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-bg-surface hover:border-primary/20 transition-all duration-200 group"
+                          style={{ contentVisibility: 'auto', containIntrinsicSize: '66px' }}
                         >
-                          {isLoadingAttachments ? 'Loading...' : 'Load More Documents'}
-                        </button>
-                      )}
-                    </>
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary-light flex items-center justify-center shrink-0 border border-primary/20">
+                            <FileIcon className="w-5 h-5" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h5 className="text-sm font-medium text-text-base truncate group-hover:text-primary-light transition-colors" title={doc.attachmentName}>
+                              {doc.attachmentName}
+                            </h5>
+                            <p className="text-xs text-text-subtle mt-0.5 uppercase">
+                              {doc.attachmentType.split('/')[1] || 'FILE'}
+                            </p>
+                          </div>
+                          <button className="p-2 text-text-muted hover:text-white rounded-lg hover:bg-bg-surface-hover transition-colors shrink-0">
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
+
+              {/* Infinite Scroll Sentinel */}
+              <div ref={sentinelRef} className="h-1 w-full" />
+
+              {/* Smooth Animated Loading Spinner */}
+              <AnimatePresence>
+                {showLoader && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="flex items-center justify-center py-2 w-full"
+                  >
+                    <div className="flex space-x-1.5 items-center justify-center">
+                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                      <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           </>
         ) : null}
