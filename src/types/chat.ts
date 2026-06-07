@@ -40,6 +40,7 @@ export interface ConversationParticipant {
   userId: string;
   user: User;
   lastReadAt?: string;
+  mutedUntil?: string | null;
 }
 
 export interface Conversation {

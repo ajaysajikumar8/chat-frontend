@@ -3,7 +3,7 @@ import {
   ArrowLeft, Send, MoreVertical, Image as ImageIcon, 
   CheckCheck, ChevronDown, Paperclip, X, File as FileIcon, 
   Download, Play, ZoomIn, ZoomOut, ChevronLeft, ChevronRight,
-  ShieldAlert
+  ShieldAlert, VolumeX, Volume2
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Virtuoso } from 'react-virtuoso';
@@ -267,6 +267,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   const [unreadWhileScrolled, setUnreadWhileScrolled] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [showMuteSubmenu, setShowMuteSubmenu] = useState(false);
+
+  useEffect(() => {
+    if (!isMenuOpen) {
+      setShowMuteSubmenu(false);
+    }
+  }, [isMenuOpen]);
 
   // Check block status whenever conversation changes
   useEffect(() => {
@@ -284,8 +291,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     addMessage,
     hasFetchedHistory,
     firstItemIndex: storeFirstItemIndex,
-    updateConversationBlockStatus
+    updateConversationBlockStatus,
+    muteConversation
   } = useChatStore();
+
+  const handleMute = async (duration: string) => {
+    if (!conversation) return;
+    await muteConversation(conversation.id, duration);
+    setIsMenuOpen(false);
+  };
+
+  const handleUnmute = async () => {
+    if (!conversation) return;
+    await muteConversation(conversation.id, 'none');
+    setIsMenuOpen(false);
+  };
 
   const handleBlockToggle = async () => {
     if (!conversation) return;
@@ -726,13 +746,88 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   exit={{ opacity: 0, scale: 0.95, y: -10 }}
                   className="absolute right-0 mt-2 w-48 bg-bg-surface border border-border-subtle rounded-xl shadow-xl z-40 py-1.5 overflow-hidden"
                 >
-                  <button
-                    onClick={handleBlockToggle}
-                    className="w-full text-left px-4 py-2.5 text-sm text-danger hover:bg-bg-surface-hover/80 transition-colors flex items-center gap-2 font-medium"
-                  >
-                    <ShieldAlert className="w-4 h-4" />
-                    {isBlocked ? 'Unblock User' : 'Block User'}
-                  </button>
+                  {(() => {
+                    const myParticipant = conversation.participants.find(p => p.userId === currentUserId);
+                    const isMuted = !!(myParticipant?.mutedUntil && new Date(myParticipant.mutedUntil) > new Date());
+
+                    if (!showMuteSubmenu) {
+                      return (
+                        <>
+                          {isMuted ? (
+                            <button
+                              onClick={handleUnmute}
+                              className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors flex items-center gap-2 font-medium"
+                            >
+                              <Volume2 className="w-4 h-4 text-text-muted" />
+                              Unmute Chat
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setShowMuteSubmenu(true)}
+                              className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors flex items-center gap-2 font-medium"
+                            >
+                              <VolumeX className="w-4 h-4 text-text-muted" />
+                              Mute Chat
+                            </button>
+                          )}
+                          
+                          <div className="border-t border-border-subtle/50 my-1" />
+
+                          <button
+                            onClick={handleBlockToggle}
+                            className="w-full text-left px-4 py-2.5 text-sm text-danger hover:bg-bg-surface-hover/80 transition-colors flex items-center gap-2 font-medium"
+                          >
+                            <ShieldAlert className="w-4 h-4" />
+                            {isBlocked ? 'Unblock User' : 'Block User'}
+                          </button>
+                        </>
+                      );
+                    } else {
+                      return (
+                        <>
+                          <div className="px-4 py-1.5 flex items-center gap-2 border-b border-border-subtle/50 text-xs font-semibold text-text-muted uppercase tracking-wider shrink-0">
+                            <button 
+                              onClick={() => setShowMuteSubmenu(false)} 
+                              className="p-1 -ml-1 rounded hover:bg-bg-surface-hover/80 text-text-muted transition-colors"
+                            >
+                              <ArrowLeft className="w-3.5 h-3.5" />
+                            </button>
+                            Mute Duration
+                          </div>
+                          <button
+                            onClick={() => handleMute('1h')}
+                            className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors font-medium"
+                          >
+                            Mute for 1 hour
+                          </button>
+                          <button
+                            onClick={() => handleMute('8h')}
+                            className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors font-medium"
+                          >
+                            Mute for 8 hours
+                          </button>
+                          <button
+                            onClick={() => handleMute('24h')}
+                            className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors font-medium"
+                          >
+                            Mute for 24 hours
+                          </button>
+                          <button
+                            onClick={() => handleMute('7d')}
+                            className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors font-medium"
+                          >
+                            Mute for 7 days
+                          </button>
+                          <button
+                            onClick={() => handleMute('always')}
+                            className="w-full text-left px-4 py-2.5 text-sm text-text-base hover:bg-bg-surface-hover/80 transition-colors font-medium"
+                          >
+                            Mute always
+                          </button>
+                        </>
+                      );
+                    }
+                  })()}
                 </motion.div>
               </>
             )}

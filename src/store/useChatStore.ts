@@ -31,6 +31,7 @@ interface ChatState {
   replaceOptimisticMessage: (conversationId: string, optimisticId: string, message: Message) => void;
   updateConversationBlockStatus: (conversationId: string, isBlockedByMe: boolean) => void;
   updateConversationBlockStatusByThem: (userId: string, isBlockedByThem: boolean) => void;
+  updateConversationMuteStatus: (conversationId: string, mutedUntil: string | null) => void;
 
   // Thunks
   fetchConversations: () => Promise<void>;
@@ -38,6 +39,7 @@ interface ChatState {
   sendMessage: (conversationId: string, content: string, attachment?: { url: string, type: string, name: string }, optimisticId?: string) => Promise<void>;
   startConversation: (user: User) => Promise<void>;
   markConversationRead: (conversationId: string) => Promise<void>;
+  muteConversation: (conversationId: string, duration: string) => Promise<void>;
 }
 
 // Module-level variable to manage typing timeouts (TTL) without bloating the Zustand state
@@ -314,6 +316,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }),
   })),
 
+  updateConversationMuteStatus: (conversationId, mutedUntil) => set((state) => {
+    const currentUserId = useAuthStore.getState().user?.id;
+    return {
+      conversations: state.conversations.map((c) => {
+        if (c.id === conversationId) {
+          return {
+            ...c,
+            participants: c.participants.map((p) =>
+              p.userId === currentUserId ? { ...p, mutedUntil } : p
+            ),
+          };
+        }
+        return c;
+      }),
+    };
+  }),
+
   fetchConversations: async () => {
     set({ isLoading: true, error: null });
     try {
@@ -456,6 +475,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (error: any) {
       console.error('Failed to start conversation:', error);
       throw error;
+    }
+  },
+
+  muteConversation: async (conversationId: string, duration: string) => {
+    if (conversationId.startsWith('temp_')) return;
+    try {
+      const response = await api.post(`/conversations/${conversationId}/mute`, { duration });
+      const updatedParticipant = response.data.data;
+      get().updateConversationMuteStatus(conversationId, updatedParticipant.mutedUntil);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      console.error('Failed to mute conversation:', error);
     }
   },
 }));

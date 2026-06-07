@@ -4,7 +4,7 @@ import {
   Search, Globe, LogOut, CheckCheck, 
   Image as ImageIcon, Video as VideoIcon, FileText as FileIcon, 
   Music as MusicIcon, Paperclip as AttachmentIcon, 
-  Settings, ArrowLeft, Camera, Loader2, Shield
+  Settings, ArrowLeft, Camera, Loader2, Shield, VolumeX
 } from 'lucide-react';
 import type { Conversation, User, Message, UserSettings } from '../../types/chat';
 import { useChatStore } from '../../store/useChatStore';
@@ -422,6 +422,8 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     const otherUser = otherParticipant.user;
                     const status = userPresence[otherUser.id]?.status || otherUser.status;
                     const lastMessage = conv.messages?.[0];
+                    const myParticipant = conv.participants.find(p => p.userId === currentUserId);
+                    const isMuted = !!(myParticipant?.mutedUntil && new Date(myParticipant.mutedUntil) > new Date());
 
                     return (
                       <button
@@ -451,9 +453,14 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                             <h3 className="font-medium text-text-base truncate pr-2">
                               {otherUser.displayName}
                             </h3>
-                            <span className="text-xs text-text-subtle whitespace-nowrap">
-                              {formatRelativeDate(lastMessage?.createdAt)}
-                            </span>
+                            <div className="flex items-center gap-1.5 whitespace-nowrap">
+                              {isMuted && (
+                                <VolumeX className="w-3.5 h-3.5 text-text-subtle opacity-70 shrink-0" />
+                              )}
+                              <span className="text-xs text-text-subtle">
+                                {formatRelativeDate(lastMessage?.createdAt)}
+                              </span>
+                            </div>
                           </div>
                           <div className="flex justify-between items-center gap-2">
                             <div className="flex items-center gap-1 min-w-0">
@@ -462,14 +469,18 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                                   otherParticipant.lastReadAt && new Date(lastMessage.createdAt) <= new Date(otherParticipant.lastReadAt)
                                     ? 'text-sky-400 drop-shadow-sm'
                                     : 'text-text-subtle'
-                                }`} />
+                                  }`} />
                               )}
                               <p className="text-sm text-text-muted truncate">
                                 {getMessagePreview(lastMessage, otherUser.username)}
                               </p>
                             </div>
                             {(conv.unreadCount ?? 0) > 0 && (
-                              <span className="shrink-0 bg-primary text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                              <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isMuted 
+                                  ? 'bg-slate-800 text-slate-400 border border-slate-700/50' 
+                                  : 'bg-primary text-white'
+                              }`}>
                                 {conv.unreadCount}
                               </span>
                             )}

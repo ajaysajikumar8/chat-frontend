@@ -90,6 +90,10 @@ export const connectSocket = () => {
       useChatStore.getState().fetchConversations();
     }
   });
+  
+  socket.on('conversation_mute_changed', ({ conversationId, mutedUntil }: { conversationId: string; mutedUntil: string | null }) => {
+    useChatStore.getState().updateConversationMuteStatus(conversationId, mutedUntil);
+  });
 };
 
 export const disconnectSocket = () => {
