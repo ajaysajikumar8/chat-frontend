@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
-  Search, MessageSquare, Globe, LogOut, CheckCheck, 
+  Search, Globe, LogOut, CheckCheck, 
   Image as ImageIcon, Video as VideoIcon, FileText as FileIcon, 
   Music as MusicIcon, Paperclip as AttachmentIcon, 
   Settings, ArrowLeft, Camera, Loader2, Shield
@@ -368,8 +368,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                     currentUser?.displayName?.charAt(0).toUpperCase() || "U"
                   )}
                 </button>
-                <h2 className="text-xl font-semibold text-text-base flex items-center gap-2">
-                  <MessageSquare className="w-5 h-5 text-primary-light" />
+                <h2 className="text-xl font-semibold text-text-base">
                   Messages
                 </h2>
               </div>
